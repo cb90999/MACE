@@ -1,0 +1,77 @@
+"""
+MACE — Mobile AArch64 Context Extension
+core/context_snapshot.py
+
+Captures and holds the full AArch64 register state at an LLDB stop.
+This is the central data structure everything else in MACE reads from.
+"""
+
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+@dataclass
+class ContextSnapshot:
+    """
+    Immutable snapshot of AArch64 register state at a single LLDB stop.
+
+    Populated by the LLDB session layer; consumed by the display and AI layers.
+    All register values stored as Python ints (unsigned 64-bit).
+    """
+
+    # --- General purpose registers (64-bit) ---
+    x: list[int] = field(default_factory=lambda: [0] * 29)  # x0–x28
+
+    # --- Special purpose registers ---
+    fp: int = 0       # x29 — frame pointer
+    lr: int = 0       # x30 — link register (return address)
+    sp: int = 0       # stack pointer
+    pc: int = 0       # program counter
+
+    # --- Status register ---
+    cpsr: int = 0     # Current Program Status Register
+
+    # --- Stop metadata ---
+    stop_reason: str = ""          # e.g. "breakpoint", "step", "watchpoint"
+    binary_name: str = ""          # e.g. "ctf_eea" (stripped) or "MyApp"
+    is_stripped: bool = False      # no symbols available
+    iteration: Optional[int] = None  # loop counter if detected
+
+    # --- Derived helpers ---
+
+    def w(self, n: int) -> int:
+        """Return 32-bit view of xN (lower 32 bits), matching AArch64 wN semantics."""
+        if n < 29:
+            return self.x[n] & 0xFFFFFFFF
+        raise ValueError(f"w{n} out of range — use fp/lr/sp/pc directly")
+
+    def as_hex(self, n: int) -> str:
+        """Return xN as zero-padded 16-char hex string."""
+        return f"0x{self.x[n]:016x}"
+
+    def as_decimal(self, n: int) -> int:
+        """Return xN as unsigned decimal."""
+        return self.x[n]
+
+    def as_ascii(self, n: int) -> Optional[str]:
+        """
+        Return printable ASCII interpretation of xN if all bytes are printable.
+        Useful for spotting flag characters in registers — core EEA use case.
+        """
+        raw = self.x[n].to_bytes(8, byteorder='little')
+        printable = all(0x20 <= b < 0x7F or b == 0 for b in raw)
+        if printable:
+            return raw.rstrip(b'\x00').decode('ascii', errors='replace')
+        return None
+
+    def w_as_hex(self, n: int) -> str:
+        """Return wN (32-bit) as zero-padded 8-char hex string."""
+        return f"0x{self.w(n):08x}"
+
+    def __repr__(self) -> str:
+        return (
+            f"ContextSnapshot(pc=0x{self.pc:016x}, "
+            f"sp=0x{self.sp:016x}, "
+            f"stop='{self.stop_reason}', "
+            f"stripped={self.is_stripped})"
+        )

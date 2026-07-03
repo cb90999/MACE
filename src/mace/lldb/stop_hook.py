@@ -25,10 +25,15 @@ class MACEStopHook:
 
     def handle_stop(self, exe_ctx, stream):
         global _iteration
-        _iteration += 1
 
         thread = exe_ctx.GetThread()
-        frame  = thread.GetFrameAtIndex(0)
+
+        # Skip signal stops (entry stop in dyld, etc.)
+        if thread.GetStopReason() == lldb.eStopReasonSignal:
+            return False
+
+        _iteration += 1
+        frame = thread.GetFrameAtIndex(0)
 
         if not frame.IsValid():
             return False

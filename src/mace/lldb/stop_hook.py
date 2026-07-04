@@ -17,6 +17,7 @@ WATCH_REGS = [8, 9]
 COMPARE    = (8, 9)
 
 _iteration = 0
+_hook_id   = None
 
 
 class MACEStopHook:
@@ -28,7 +29,7 @@ class MACEStopHook:
 
         thread = exe_ctx.GetThread()
 
-        # Skip signal stops (entry stop in dyld, etc.)
+        # Skip signal stops (dyld entry, etc.)
         if thread.GetStopReason() == lldb.eStopReasonSignal:
             return False
 
@@ -44,9 +45,21 @@ class MACEStopHook:
         return False
 
 
+def mace_on(debugger, command, result, internal_dict):
+    """Enable MACE context panel on every stop."""
+    global _hook_id, _iteration
+    _iteration = 0
+    debugger.HandleCommand("target stop-hook add -P stop_hook.MACEStopHook")
+    print("[MACE] Context panel enabled. w8/w9 watched.")
+
+
+def mace_off(debugger, command, result, internal_dict):
+    """Disable MACE context panel."""
+    debugger.HandleCommand("target stop-hook disable")
+    print("[MACE] Context panel disabled.")
+
+
 def __lldb_init_module(debugger, internal_dict):
-    debugger.HandleCommand(
-        "target stop-hook add -P stop_hook.MACEStopHook"
-    )
-    print("[MACE] Stop hook installed.")
-    print(f"[MACE] Watching: w{WATCH_REGS[0]}, w{WATCH_REGS[1]}  |  Compare: w{COMPARE[0]} vs w{COMPARE[1]}")
+    debugger.HandleCommand("command script add -f stop_hook.mace_on mace_on")
+    debugger.HandleCommand("command script add -f stop_hook.mace_off mace_off")
+    print("[MACE] Loaded. Use 'mace_on' after setting breakpoints to enable.")

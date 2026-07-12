@@ -37,6 +37,9 @@ class ContextSnapshot:
     is_stripped: bool = False      # no symbols available
     iteration: Optional[int] = None  # loop counter if detected
 
+    # --- ASLR slide ---
+    aslr_slide: int = 0            # load address - file address of main module
+
     # --- Derived helpers ---
 
     def w(self, n: int) -> int:
@@ -68,10 +71,15 @@ class ContextSnapshot:
         """Return wN (32-bit) as zero-padded 8-char hex string."""
         return f"0x{self.w(n):08x}"
 
+    def file_offset(self) -> int:
+        """Return PC as file offset (slide removed) for stable cross-run addresses."""
+        return self.pc - self.aslr_slide
+
     def __repr__(self) -> str:
         return (
             f"ContextSnapshot(pc=0x{self.pc:016x}, "
-            f"sp=0x{self.sp:016x}, "
+            f"slide=0x{self.aslr_slide:016x}, "
+            f"file_offset=0x{self.file_offset():016x}, "
             f"stop='{self.stop_reason}', "
             f"stripped={self.is_stripped})"
         )

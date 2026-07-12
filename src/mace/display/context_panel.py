@@ -89,11 +89,13 @@ def render_registers(snap: ContextSnapshot,
 def render_stop_banner(snap: ContextSnapshot) -> str:
     stripped_tag = f"{Color.RED}[stripped]{Color.RESET} " if snap.is_stripped else ""
     iter_tag = f"  iteration {snap.iteration}" if snap.iteration is not None else ""
+    slide_tag = f"  {Color.DIM}slide=0x{snap.aslr_slide:016x}  offset=0x{snap.file_offset():08x}{Color.RESET}" if snap.aslr_slide != 0 else ""
     return (
         f"{Color.BOLD}── MACE{Color.RESET}  "
         f"{stripped_tag}"
         f"{Color.GREEN}{snap.binary_name}{Color.RESET}  "
         f"{Color.GREY}{snap.stop_reason}{iter_tag}{Color.RESET}"
+        f"{slide_tag}"
     )
 
 

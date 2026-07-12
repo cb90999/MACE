@@ -6,6 +6,7 @@ Renders the GEF-like context panel to the terminal on every LLDB stop.
 Reads from a ContextSnapshot — no LLDB dependency here.
 """
 
+import shutil
 from typing import Optional
 from mace.core.context_snapshot import ContextSnapshot
 
@@ -19,18 +20,32 @@ class Color:
     YELLOW  = "\033[33m"
     CYAN    = "\033[36m"
     GREY    = "\033[90m"
+    DIM     = "\033[2m"
 
 
-def _separator(label: str, width: int = 64) -> str:
+def _terminal_width() -> int:
+    """Return terminal width minus 2 for safe rendering."""
+    return shutil.get_terminal_size(fallback=(80, 24)).columns - 2
+
+
+def _separator(label: str) -> str:
+    width = _terminal_width()
     label_str = f"── {label} "
     remaining = width - len(label_str)
-    return f"{Color.CYAN}{label_str}{'─' * remaining}{Color.RESET}"
+    return f"{Color.CYAN}{label_str}{'─' * max(remaining, 4)}{Color.RESET}"
 
 
 def _format_register_line(name: str, hex_val: str, decimal: int,
-                           ascii_val: Optional[str], highlight: bool = False) -> str:
+                           ascii_val, w_val: Optional[str],
+                           highlight: bool = False) -> str:
+    """Format a single register line with hex, decimal, optional wN and ASCII."""
     color = Color.YELLOW if highlight else Color.RESET
     line = f"  {color}{name:<6}{Color.RESET}  {hex_val}  # {decimal}u"
+
+    # Surface wN view when upper 32 bits are zero
+    if w_val is not None:
+        line += f"  {Color.DIM}w={w_val}{Color.RESET}"
+
     if ascii_val:
         line += f"  '{ascii_val}'"
     return line
@@ -38,14 +53,9 @@ def _format_register_line(name: str, hex_val: str, decimal: int,
 
 def render_registers(snap: ContextSnapshot,
                      watch: Optional[list[int]] = None) -> str:
-    """
-    Render the register panel.
-    watch: list of xN indices to highlight (e.g. [8, 9] for EEA comparison)
-    """
     watch = watch or []
     lines = [_separator("registers")]
 
-    # General purpose x0–x28 in rows of 2
     for i in range(0, 29, 2):
         row = ""
         for j in [i, i + 1]:
@@ -55,7 +65,13 @@ def render_registers(snap: ContextSnapshot,
             decimal  = snap.as_decimal(j)
             ascii_v  = snap.as_ascii(j)
             highlight = j in watch
-            row += _format_register_line(f"x{j}", hex_val, decimal, ascii_v, highlight)
+
+            # Show wN only when upper 32 bits are zero
+            w_val = snap.w_as_hex(j) if (snap.x[j] >> 32 == 0 and snap.x[j] != 0) else None
+
+            row += _format_register_line(
+                f"x{j}", hex_val, decimal, ascii_v, w_val, highlight
+            )
             row += "    "
         lines.append(row)
 
@@ -71,7 +87,6 @@ def render_registers(snap: ContextSnapshot,
 
 
 def render_stop_banner(snap: ContextSnapshot) -> str:
-    """Render the top banner showing binary, stop reason, and iteration."""
     stripped_tag = f"{Color.RED}[stripped]{Color.RESET} " if snap.is_stripped else ""
     iter_tag = f"  iteration {snap.iteration}" if snap.iteration is not None else ""
     return (
@@ -84,10 +99,6 @@ def render_stop_banner(snap: ContextSnapshot) -> str:
 
 def render_match_status(snap: ContextSnapshot,
                         a: int, b: int) -> str:
-    """
-    Render match/mismatch status for a comparison pair (e.g. w8 vs w9).
-    a, b: xN register indices.
-    """
     va = snap.w(a)
     vb = snap.w(b)
     match = va == vb
@@ -99,12 +110,7 @@ def render_match_status(snap: ContextSnapshot,
 def render_panel(snap: ContextSnapshot,
                  watch: Optional[list[int]] = None,
                  compare: Optional[tuple[int, int]] = None) -> str:
-    """
-    Full context panel. Entry point for the LLDB stop hook.
-
-    watch:   register indices to highlight
-    compare: (a, b) pair to show match/mismatch status
-    """
+    width = _terminal_width()
     parts = [
         render_stop_banner(snap),
         render_registers(snap, watch=watch),
@@ -112,5 +118,5 @@ def render_panel(snap: ContextSnapshot,
     if compare:
         parts.append(_separator("comparison"))
         parts.append(render_match_status(snap, *compare))
-    parts.append(Color.CYAN + "─" * 64 + Color.RESET)
+    parts.append(Color.CYAN + "─" * width + Color.RESET)
     return "\n".join(parts)

@@ -1,0 +1,9 @@
+# Python build artifacts
+src/mace.egg-info/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+
+# Compiled binaries — tracked intentionally in targets/
+# (remove this if you want to exclude them)

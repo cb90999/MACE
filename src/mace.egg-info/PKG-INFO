@@ -1,0 +1,27 @@
+Metadata-Version: 2.4
+Name: mace
+Version: 0.1.0
+Summary: Mobile AArch64 Context Extension — GEF-like LLDB context panel for mobile security
+License: Apache-2.0
+Project-URL: Repository, https://github.com/chidabangalore/mace
+Keywords: lldb,arm64,aarch64,mobile,security,iOS,Android
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+
+# MACE — Mobile AArch64 Context Extension
+
+MACE provides an intelligent context panel on every LLDB stop — registers,
+disassembly, stack frames, and syscall annotation optimized for mobile AArch64.
+
+On demand, MACE's AI layer interprets the current execution state in plain
+language using a local/cloud hybrid routing model that minimizes token burn.
+
+Unlike GEF and pwndbg, MACE uses native LLDB kernel primitives rather than
+dynamic library injection, making it transparent to Frida-specific
+anti-instrumentation defenses on iOS and Android.
+
+## Status
+v0 — in development
+
+## Target
+macOS AArch64 (M-series) — LLDB + Python API

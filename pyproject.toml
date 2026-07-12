@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mace"
+version = "0.1.0"
+description = "Mobile AArch64 Context Extension — GEF-like LLDB context panel for mobile security"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.9"
+keywords = ["lldb", "arm64", "aarch64", "mobile", "security", "iOS", "Android"]
+
+[project.urls]
+Repository = "https://github.com/chidabangalore/mace"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"

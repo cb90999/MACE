@@ -1,0 +1,16 @@
+README.md
+pyproject.toml
+src/mace/__init__.py
+src/mace.egg-info/PKG-INFO
+src/mace.egg-info/SOURCES.txt
+src/mace.egg-info/dependency_links.txt
+src/mace.egg-info/top_level.txt
+src/mace/ai/__init__.py
+src/mace/core/__init__.py
+src/mace/core/context_snapshot.py
+src/mace/display/__init__.py
+src/mace/display/context_panel.py
+src/mace/lldb/__init__.py
+src/mace/lldb/lldb_session.py
+src/mace/lldb/stop_hook.py
+src/mace/lldb/trace_mode.py

@@ -6,10 +6,6 @@ lldb/trace_mode.py
 import lldb
 import sys
 
-_MACE_SRC = "/Users/chidabangalore/Documents/MACE/src"
-if _MACE_SRC not in sys.path:
-    sys.path.insert(0, _MACE_SRC)
-
 from mace.lldb.lldb_session import snapshot_from_frame
 from mace.display.context_panel import Color
 

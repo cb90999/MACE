@@ -9,8 +9,8 @@ import sys
 from mace.lldb.lldb_session import snapshot_from_frame
 from mace.display.context_panel import render_panel
 
-WATCH_REGS = [8, 9]
-COMPARE    = (8, 9)
+WATCH_REGS = [0, 1]
+COMPARE    = None  # set per-session
 
 _iteration = 0
 _hook_id   = None

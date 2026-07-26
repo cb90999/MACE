@@ -35,3 +35,9 @@ Everything here is parked, not forgotten.
 - IOCCC 2025 uellenberg — compiler obfuscation techniques
 - Garuda Defender APK — anti-debug detection analysis (Thursday)
 - 8ksec OAAE — ARM exploitation cert, MACE as study environment
+
+- node-applesign (pancake/NowSecure) as preferred re-signing tool for
+  entitlement-sensitive targets — use -M (massage-entitlements) to
+  preserve original app entitlements while removing only privileged ones.
+  Replace zsign in ios-setup.md when validated.
+  Repo: https://github.com/nowsecure/node-applesign

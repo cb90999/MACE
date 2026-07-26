@@ -96,3 +96,37 @@ Technique: ObjC runtime view hierarchy dump
 
 Found UILabel with hidden=YES containing: i am groot!
 No Frida. No re-compilation. Pure debugger-native LLDB analysis.
+
+## Critical Fix — xcode-select (eliminates 12-min parsing delay)
+
+The single most important fix for LLDB iOS performance:
+
+    sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+Verify:
+    xcrun --sdk iphoneos --show-sdk-path
+    # Should show: /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/...
+
+Without this, LLDB uses CommandLineTools which has no iOS SDK.
+Result: 12+ minute symbol parsing from device RAM every session.
+With this: instant connection, SDK found automatically.
+
+## MASTG UnCrackable Level 2 — Anti-Debug Analysis (July 26, 2026)
+
+L2 has layered anti-debugging defenses:
+1. ptrace(PT_DENY_ATTACH) — called on launch
+2. Background detection thread — repeatedly calls ptrace + exit(0)
+3. Multiple threads spawned in a loop
+
+Bypass approach:
+- Use debugserver --waitfor (intercept before ptrace fires)
+- Set breakpoints on __ptrace and exit before first continue
+- Patch ptrace: reg write x0 0 (changes PT_DENY_ATTACH=31 to 0)
+- Patch exit: thread return (prevents exit from executing)
+- L2 spawns detection loop — requires automated patching or bypass tweak
+
+Status: App UI reached after manual patching. Detection loop 
+requires Liberty Lite or automated br command solution.
+
+Note: ptrace bypass is infrastructure (pre-MACE). MACE analysis
+starts after app is running under debugger.

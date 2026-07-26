@@ -46,15 +46,25 @@ Persist PATH:
     (lldb) process connect connect://192.168.4.22:1234
     (lldb) mace_on
 
-## Symbol Cache - eliminates 2-5 min parsing wait
-One-time setup:
+## Symbol Cache - eliminates parsing wait
+
+### Step 1 - Try this first (recommended)
+Point xcode-select at the full Xcode installation (see Critical Fix section below).
+This alone eliminates the parsing delay for most configurations and should be
+attempted before any manual cache handling.
+
+### Step 2 - Optional fallback (if parsing is still slow after xcode-select fix)
+One-time cache copy:
 
     mkdir -p ~/dyld_cache
-    scp root@192.168.4.22:/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64 ~/dyld_cache/
+    scp root@<ipad-ip>:/private/preboot/Cryptexes/OS/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64* ~/dyld_cache/
 
 Add to ~/.lldbinit:
 
     settings set target.exec-search-paths /Users/chidabangalore/dyld_cache
+
+Note: After applying the xcode-select fix, manual cache handling is
+typically unnecessary.
 
 ## IPA Re-signing for iOS 18
 Required for older IPAs with outdated signatures.
@@ -128,5 +138,7 @@ Bypass approach:
 Status: App UI reached after manual patching. Detection loop 
 requires Liberty Lite or automated br command solution.
 
-Note: ptrace bypass is infrastructure (pre-MACE). MACE analysis
-starts after app is running under debugger.
+Note: Anti-debug bypass is currently treated as external target-preparation
+infrastructure. MACE analysis begins once a stable LLDB session is established.
+Detection and annotation of anti-debug patterns may be added as a future
+MACE capability.

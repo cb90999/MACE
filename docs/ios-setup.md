@@ -179,4 +179,4 @@ MACE session:
 
 MACE is not just complementary to Frida. It is an alternative path
 when Frida instrumentation is detected or interferes with deeper analysis.
-The debugserver-native approach leaves no in-process artifacts.
+Unlike Frida injection, the tested debugserver-native workflow did not require an injected instrumentation runtime inside the target process.

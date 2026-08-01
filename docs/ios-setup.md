@@ -142,3 +142,41 @@ Note: Anti-debug bypass is currently treated as external target-preparation
 infrastructure. MACE analysis begins once a stable LLDB session is established.
 Detection and annotation of anti-debug patterns may be added as a future
 MACE capability.
+
+## Frida + MACE Coexistence Test (iOS 18.7.2, palera1n, Aug 1 2026)
+
+Tested simultaneous and sequential use of Frida and debugserver/MACE
+on the same process (MASTG UnCrackable Level 2).
+
+### Results
+
+Simultaneous Frida + debugserver: FAIL - debugserver segfaults
+Frida spawn then debugserver attach: FAIL - debugserver segfaults  
+Frida spawn then Frida exit then debugserver: FAIL - Frida artifacts remain
+debugserver --waitfor then manual ptrace patch: PASS - proven workflow
+
+### Conclusion
+
+Frida and MACE via debugserver are NOT simultaneously compatible on
+iOS 18.7.2. Frida instrumentation leaves process artifacts that cause
+debugserver to segfault even after Frida detaches.
+
+### Correct Workflow
+
+Use ONE tool per session:
+
+Frida session:
+- objection for jailbreak/anti-debug bypass at API layer
+- Frida scripts for ObjC method hooking
+- Best for: Java/ObjC runtime analysis, API-layer observation
+
+MACE session:
+- debugserver --waitfor to intercept at launch
+- Manual ptrace breakpoint and patch (reg write x0 0)
+- Best for: AArch64 register-layer analysis, below Frida detection surface
+
+### MACE Differentiator
+
+MACE is not just complementary to Frida. It is an alternative path
+when Frida instrumentation is detected or interferes with deeper analysis.
+The debugserver-native approach leaves no in-process artifacts.

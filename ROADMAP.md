@@ -40,3 +40,25 @@
 - Telemetry opt-out by default
 - SSE server mode for remote debugging
 - NowSecure webinar demo — October/November
+
+## UI Responsiveness During Debugging
+
+Problem: breakpoint stops suspend all threads including main UI thread,
+causing keyboard freeze and tap unresponsiveness during LLDB sessions.
+
+Root cause: conditional breakpoints evaluate on every call, briefly
+stopping the process thousands of times per second.
+
+### Fix approaches (v1):
+
+1. Trace-mode pattern for objc_msgSend — Python callback logs and
+   auto-continues atomically, process barely pauses (same as mace_trace_on)
+
+2. Hardware breakpoints — use debug registers instead of BRK instruction
+   patching, process does not stop, near-zero UI impact
+
+3. Caller filtering — skip non-app objc_msgSend calls entirely,
+   dramatically reduces stop frequency
+
+AI orchestration layer (v3) selects strategy automatically based on
+target sensitivity and analysis goals.

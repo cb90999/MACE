@@ -41,24 +41,43 @@
 - SSE server mode for remote debugging
 - NowSecure webinar demo — October/November
 
-## UI Responsiveness During Debugging
+## objc_msgSend Annotation Design
 
-Problem: breakpoint stops suspend all threads including main UI thread,
-causing keyboard freeze and tap unresponsiveness during LLDB sessions.
+Problem: global objc_msgSend breakpoint fires thousands of times per second,
+freezing the UI and making the app unusable during debugging.
 
-Root cause: conditional breakpoints evaluate on every call, briefly
-stopping the process thousands of times per second.
+Root cause: objc_msgSend is an extraordinarily high-frequency dispatcher.
+Any breakpoint — software or hardware — still stops execution when triggered.
+Auto-continue Python callbacks still require stop/callback/resume cycles.
+Global tracing is incompatible with a responsive mobile UI.
 
-### Fix approaches (v1):
+### v1 Implementation — Passive annotation at existing stops
 
-1. Trace-mode pattern for objc_msgSend — Python callback logs and
-   auto-continues atomically, process barely pauses (same as mace_trace_on)
+When MACE is already stopped for another reason, inspect the current
+instruction. If it is a call to objc_msgSend, resolve:
+- x0 as the receiver class name
+- x1 as the selector string
+- caller symbol and app-module offset
 
-2. Hardware breakpoints — use debug registers instead of BRK instruction
-   patching, process does not stop, near-zero UI impact
+No global objc_msgSend breakpoint needed. Zero overhead. Fits the
+context panel mission exactly.
 
-3. Caller filtering — skip non-app objc_msgSend calls entirely,
-   dramatically reduces stop frequency
+### Backlog — Narrower tracing approaches
 
-AI orchestration layer (v3) selects strategy automatically based on
-target sensitivity and analysis goals.
+1. Call-site breakpoints — statically locate app-owned bl objc_msgSend
+   call sites and break only on those addresses. Avoids UIKit/Foundation noise.
+
+2. Selector-targeted tracing — analyst requests specific selector:
+   mace_objc_trace authenticateUser:
+   MACE resolves a narrow strategy rather than global dispatch tracing.
+
+3. Offline disassembly annotation — annotate likely ObjC message-send
+   sequences from nearby register-loading instructions and selector references.
+
+### Hardware breakpoints — corrected understanding
+
+Hardware breakpoints avoid modifying executable code with a software trap
+instruction, but still stop execution when triggered. They help with:
+- integrity-sensitive code that scans for BRK opcodes
+- breakpoint count limits (ARM64 has 6 hardware breakpoints)
+They do NOT solve high-frequency stop overhead.

@@ -81,3 +81,37 @@ instruction, but still stop execution when triggered. They help with:
 - integrity-sensitive code that scans for BRK opcodes
 - breakpoint count limits (ARM64 has 6 hardware breakpoints)
 They do NOT solve high-frequency stop overhead.
+
+## v1 Target Sequencing (revised)
+
+### Priority 1 — Feature development on cooperative targets
+Build and validate each MACE feature against apps with no anti-debug friction.
+Clean debugserver attach, full MACE capability demonstration.
+
+Targets:
+- MASTG iOS UnCrackable L1 (done ✅)
+- DVIA v2 (Prateek's app — objc annotation, mace_patch)
+- iGoat (OWASP iOS training — syscall annotation)
+- InsecureBankv2 (crypto key material in registers)
+
+Features to validate on these targets:
+- Passive objc_msgSend annotation with caller filtering (in progress)
+- mace_patch — register modification via SBValue API
+- Syscall annotation (svc #0x80 + x16)
+- Hardware breakpoint mode
+
+### Priority 2 — Hardened targets once features are proven
+Anti-debug bypass is a prerequisite problem, not the MACE headline.
+Attempt these after all v1 features are validated on cooperative targets.
+
+Targets:
+- MASTG iOS UnCrackable L2 (ptrace loop — needs Liberty Lite or bypass tweak)
+- MASTG iOS UnCrackable L3
+- Garuda Defender APK analysis
+- Production app assessments
+
+### Rationale
+Frida and MACE cannot coexist on iOS 18.7.2 (proven Aug 1 2026).
+Anti-debug bypass is infrastructure, not MACE capability.
+Demonstrating full MACE features on cooperative targets is more
+compelling for NowSecure demo than fighting bypass infrastructure.

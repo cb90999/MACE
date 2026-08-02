@@ -81,6 +81,9 @@ def snapshot_from_frame(frame: lldb.SBFrame,
     snap.iteration   = iteration
     snap.aslr_slide  = _compute_aslr_slide(target)
 
+    # --- Passive objc_msgSend annotation ---
+    _annotate_objc_call(snap, frame, target)
+
     return snap
 
 
@@ -95,3 +98,46 @@ def _get_stop_reason(thread: lldb.SBThread) -> str:
         lldb.eStopReasonException:    "exception",
     }
     return mapping.get(reason, "unknown")
+
+
+def _annotate_objc_call(snap: ContextSnapshot, frame: lldb.SBFrame,
+                         target: lldb.SBTarget) -> None:
+    """
+    Passive objc_msgSend annotation.
+    When stopped at or just after objc_msgSend, resolve:
+      x0 -> receiver class name
+      x1 -> selector string
+    No global breakpoint needed — reads state at existing stop.
+    """
+    try:
+        pc = snap.pc
+        # Check if pc is inside objc_msgSend or we just called it (lr points into app)
+        # Get the symbol at current pc
+        addr = target.ResolveLoadAddress(pc)
+        sym = addr.GetSymbol()
+        sym_name = sym.GetName() if sym.IsValid() else ""
+
+        # Resolve receiver from x0
+        x0 = snap.x[0]
+        if x0 and x0 > 0x100000000:
+            # Try to get class name via ObjC runtime expression
+            expr_result = frame.EvaluateExpression(
+                f"(const char *)object_getClassName((id){x0})"
+            )
+            if expr_result.IsValid() and not expr_result.GetError().Fail():
+                val = expr_result.GetSummary()
+                if val:
+                    snap.objc_receiver = val.strip('"')
+
+        # Resolve selector from x1
+        x1 = snap.x[1]
+        if x1 and x1 > 0x100000000:
+            expr_result = frame.EvaluateExpression(
+                f"(const char *)sel_getName((SEL){x1})"
+            )
+            if expr_result.IsValid() and not expr_result.GetError().Fail():
+                val = expr_result.GetSummary()
+                if val:
+                    snap.objc_selector = val.strip('"')
+    except Exception:
+        pass  # Annotation is best-effort, never crash MACE

@@ -40,6 +40,10 @@ class ContextSnapshot:
     # --- ASLR slide ---
     aslr_slide: int = 0            # load address - file address of main module
 
+    # --- ObjC passive annotation ---
+    objc_receiver: str = ""        # x0 class name if stopped at/after objc_msgSend
+    objc_selector: str = ""        # x1 selector string if stopped at/after objc_msgSend
+
     # --- Derived helpers ---
 
     def w(self, n: int) -> int:

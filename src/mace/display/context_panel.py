@@ -1,9 +1,6 @@
 """
 MACE — Mobile AArch64 Context Extension
 display/context_panel.py
-
-Renders the GEF-like context panel to the terminal on every LLDB stop.
-Reads from a ContextSnapshot — no LLDB dependency here.
 """
 
 import shutil
@@ -11,7 +8,6 @@ from typing import Optional
 from mace.core.context_snapshot import ContextSnapshot
 
 
-# ANSI color codes
 class Color:
     RESET   = "\033[0m"
     BOLD    = "\033[1m"
@@ -24,7 +20,6 @@ class Color:
 
 
 def _terminal_width() -> int:
-    """Return terminal width minus 2 for safe rendering."""
     return shutil.get_terminal_size(fallback=(80, 24)).columns - 2
 
 
@@ -35,24 +30,18 @@ def _separator(label: str) -> str:
     return f"{Color.CYAN}{label_str}{'─' * max(remaining, 4)}{Color.RESET}"
 
 
-def _format_register_line(name: str, hex_val: str, decimal: int,
-                           ascii_val, w_val: Optional[str],
-                           highlight: bool = False) -> str:
-    """Format a single register line with hex, decimal, optional wN and ASCII."""
+def _format_register_line(name, hex_val, decimal, ascii_val, w_val, highlight=False):
     color = Color.YELLOW if highlight else Color.RESET
     line = f"  {color}{name:<6}{Color.RESET}  {hex_val}  # {decimal}u"
-
-    # Surface wN view when upper 32 bits are zero
     if w_val is not None:
         line += f"  {Color.DIM}w={w_val}{Color.RESET}"
-
     if ascii_val:
         line += f"  '{ascii_val}'"
     return line
 
 
 def render_registers(snap: ContextSnapshot,
-                     watch: Optional[list[int]] = None) -> str:
+                     watch: Optional[list] = None) -> str:
     watch = watch or []
     lines = [_separator("registers")]
 
@@ -65,17 +54,11 @@ def render_registers(snap: ContextSnapshot,
             decimal  = snap.as_decimal(j)
             ascii_v  = snap.as_ascii(j)
             highlight = j in watch
-
-            # Show wN only when upper 32 bits are zero
             w_val = snap.w_as_hex(j) if (snap.x[j] >> 32 == 0 and snap.x[j] != 0) else None
-
-            row += _format_register_line(
-                f"x{j}", hex_val, decimal, ascii_v, w_val, highlight
-            )
+            row += _format_register_line(f"x{j}", hex_val, decimal, ascii_v, w_val, highlight)
             row += "    "
         lines.append(row)
 
-    # Special registers
     lines.append("")
     lines.append(f"  {'fp':<6}  0x{snap.fp:016x}  # {snap.fp}u")
     lines.append(f"  {'lr':<6}  0x{snap.lr:016x}  # {snap.lr}u")
@@ -99,8 +82,7 @@ def render_stop_banner(snap: ContextSnapshot) -> str:
     )
 
 
-def render_match_status(snap: ContextSnapshot,
-                        a: int, b: int) -> str:
+def render_match_status(snap: ContextSnapshot, a: int, b: int) -> str:
     va = snap.w(a)
     vb = snap.w(b)
     match = va == vb
@@ -110,8 +92,8 @@ def render_match_status(snap: ContextSnapshot,
 
 
 def render_panel(snap: ContextSnapshot,
-                 watch: Optional[list[int]] = None,
-                 compare: Optional[tuple[int, int]] = None) -> str:
+                 watch: Optional[list] = None,
+                 compare: Optional[tuple] = None) -> str:
     width = _terminal_width()
     parts = [
         render_stop_banner(snap),
@@ -120,5 +102,10 @@ def render_panel(snap: ContextSnapshot,
     if compare:
         parts.append(_separator("comparison"))
         parts.append(render_match_status(snap, *compare))
+    if snap.objc_receiver or snap.objc_selector:
+        parts.append(_separator("objc"))
+        receiver = snap.objc_receiver or "?"
+        selector = snap.objc_selector or "?"
+        parts.append(f"  {Color.CYAN}[{receiver} {selector}]{Color.RESET}")
     parts.append(Color.CYAN + "─" * width + Color.RESET)
     return "\n".join(parts)

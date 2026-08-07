@@ -180,3 +180,45 @@ MACE session:
 MACE is not just complementary to Frida. It is an alternative path
 when Frida instrumentation is detected or interferes with deeper analysis.
 Unlike Frida injection, the tested debugserver-native workflow did not require an injected instrumentation runtime inside the target process.
+
+## mace_patch Validated — ISS Debugger Bypass (Aug 7, 2026)
+
+Target: MACESecurityTest app using IOSSecuritySuite 2.3.0
+Device: iPad 7th Gen (A10, iOS 18.7.2, palera1n)
+
+### Finding
+ISS amIDebugged() uses sysctl with KERN_PROC_PID to read P_TRACED flag.
+Signature: x1=0x288 (buffer size), x9=0x7f (KERN_PROC_PID)
+
+### Patch Point
+Disassembly of DebuggerChecker.amIDebugged() revealed:
+
+    0x104432100 <+1320>: str w8, [sp, #0x1c]  <- P_TRACED result stored here
+    0x10443212c <+1364>: ldr w0, [sp, #0x1c]  <- loaded into return register
+    0x104432130 <+1368>: ret
+
+### MACE Bypass
+Set breakpoint at str instruction, patch w8=0 before store:
+
+    (lldb) br set -a 0x104432100
+    (lldb) br command add 1
+    > reg write x8 0
+    > c
+    > DONE
+
+### Result
+    amIDebugged() -> NO  (bypassed via register patch)
+
+### Technique
+- No Frida injection
+- No library hooking
+- Sanctioned debugserver path
+- Invisible to amIReverseEngineered() and amIRuntimeHooked()
+- Operates below ISS detection surface
+
+### ISS Detection Summary vs MACE
+    amIJailbroken()        YES  (jailbreak artifacts, not MACE-specific)
+    amIDebugged()          NO   (MACE patched P_TRACED result)
+    amIReverseEngineered() YES  (jailbreak tools, not MACE-specific)
+    amIProxied()           NO   (MACE leaves no proxy)
+    amIRunInEmulator()     NO   (real device)

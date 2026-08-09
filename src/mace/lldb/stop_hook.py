@@ -46,7 +46,7 @@ def mace_on(debugger, command, result, internal_dict):
     global _hook_id, _iteration
     _iteration = 0
     debugger.HandleCommand("target stop-hook add -P stop_hook.MACEStopHook")
-    print("[MACE] Context panel enabled. w8/w9 watched.")
+    print("[MACE] Context panel enabled. x0/x1 watched.")
 
 
 def mace_off(debugger, command, result, internal_dict):

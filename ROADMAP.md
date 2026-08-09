@@ -115,3 +115,17 @@ Frida and MACE cannot coexist on iOS 18.7.2 (proven Aug 1 2026).
 Anti-debug bypass is infrastructure, not MACE capability.
 Demonstrating full MACE features on cooperative targets is more
 compelling for NowSecure demo than fighting bypass infrastructure.
+
+## objc_msgSend Annotation — Swift Type Support
+
+Current implementation uses object_getClassName() which works for ObjC receivers.
+Pure Swift types (ISS, SwiftUI) return empty or fail silently.
+
+Needed: Swift metadata type resolution
+Options:
+- frame.EvaluateExpression with Swift type introspection
+- SBValue.GetTypeName() on x0 register value  
+- swift_getTypeName() runtime function
+
+Validated: caller filter working correctly (lr range check passes for debug dylib)
+Gap: type name resolution for Swift receivers

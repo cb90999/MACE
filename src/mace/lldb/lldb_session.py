@@ -100,23 +100,45 @@ def _get_stop_reason(thread: lldb.SBThread) -> str:
     return mapping.get(reason, "unknown")
 
 
-def _get_app_text_range(target) -> tuple:
-    """Return (start, end) of the main module __text section for caller filtering."""
+def _get_app_text_ranges(target) -> list:
+    """
+    Return list of (start, end) tuples for all app-owned __text sections.
+    Includes main binary and embedded frameworks/dylibs.
+    Excludes system libraries in /usr/lib, /System, /Library/Apple.
+    """
+    ranges = []
     try:
-        module = target.GetModuleAtIndex(0)
-        if not module.IsValid():
-            return (0, 0)
-        for i in range(module.GetNumSections()):
-            section = module.GetSectionAtIndex(i)
-            for j in range(section.GetNumSubSections()):
-                sub = section.GetSubSectionAtIndex(j)
-                if sub.GetName() == "__text":
-                    start = sub.GetLoadAddress(target)
-                    end = start + sub.GetByteSize()
-                    return (start, end)
+        system_prefixes = ("/usr/lib", "/System", "/Library/Apple",
+                           "/private/preboot", "libsystem", "libobjc",
+                           "CoreFoundation", "Foundation", "UIKit")
+        for i in range(target.GetNumModules()):
+            module = target.GetModuleAtIndex(i)
+            if not module.IsValid():
+                continue
+            path = module.GetFileSpec().GetDirectory() or ""
+            fname = module.GetFileSpec().GetFilename() or ""
+            full = path + "/" + fname
+            # Skip system libraries
+            if any(p in full for p in system_prefixes):
+                continue
+            for j in range(module.GetNumSections()):
+                section = module.GetSectionAtIndex(j)
+                for k in range(section.GetNumSubSections()):
+                    sub = section.GetSubSectionAtIndex(k)
+                    if sub.GetName() == "__text":
+                        start = sub.GetLoadAddress(target)
+                        end = start + sub.GetByteSize()
+                        if start != 0xffffffffffffffff:
+                            ranges.append((start, end))
     except Exception:
         pass
-    return (0, 0)
+    return ranges
+
+
+def _get_app_text_range(target) -> tuple:
+    """Legacy single-range interface — returns first app __text range."""
+    ranges = _get_app_text_ranges(target)
+    return ranges[0] if ranges else (0, 0)
 
 
 def _annotate_objc_call(snap, frame, target) -> None:
@@ -128,10 +150,10 @@ def _annotate_objc_call(snap, frame, target) -> None:
     """
     try:
         # Caller filter - only annotate app-owned ObjC calls
-        text_start, text_end = _get_app_text_range(target)
+        ranges = _get_app_text_ranges(target)
         lr = snap.lr
-        if text_start and text_end:
-            if not (text_start <= lr <= text_end):
+        if ranges:
+            if not any(s <= lr <= e for s, e in ranges):
                 return  # caller is system/framework code, skip silently
 
         # Resolve receiver from x0

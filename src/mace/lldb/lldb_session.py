@@ -100,27 +100,43 @@ def _get_stop_reason(thread: lldb.SBThread) -> str:
     return mapping.get(reason, "unknown")
 
 
-def _annotate_objc_call(snap: ContextSnapshot, frame: lldb.SBFrame,
-                         target: lldb.SBTarget) -> None:
+def _get_app_text_range(target) -> tuple:
+    """Return (start, end) of the main module __text section for caller filtering."""
+    try:
+        module = target.GetModuleAtIndex(0)
+        if not module.IsValid():
+            return (0, 0)
+        for i in range(module.GetNumSections()):
+            section = module.GetSectionAtIndex(i)
+            for j in range(section.GetNumSubSections()):
+                sub = section.GetSubSectionAtIndex(j)
+                if sub.GetName() == "__text":
+                    start = sub.GetLoadAddress(target)
+                    end = start + sub.GetByteSize()
+                    return (start, end)
+    except Exception:
+        pass
+    return (0, 0)
+
+
+def _annotate_objc_call(snap, frame, target) -> None:
     """
-    Passive objc_msgSend annotation.
-    When stopped at or just after objc_msgSend, resolve:
-      x0 -> receiver class name
-      x1 -> selector string
-    No global breakpoint needed — reads state at existing stop.
+    Passive objc_msgSend annotation - caller filtered.
+    Only annotates when lr falls within the app own __text section.
+    Skips Foundation/UIKit/system calls automatically.
+    No global breakpoint needed - reads state at existing stop.
     """
     try:
-        pc = snap.pc
-        # Check if pc is inside objc_msgSend or we just called it (lr points into app)
-        # Get the symbol at current pc
-        addr = target.ResolveLoadAddress(pc)
-        sym = addr.GetSymbol()
-        sym_name = sym.GetName() if sym.IsValid() else ""
+        # Caller filter - only annotate app-owned ObjC calls
+        text_start, text_end = _get_app_text_range(target)
+        lr = snap.lr
+        if text_start and text_end:
+            if not (text_start <= lr <= text_end):
+                return  # caller is system/framework code, skip silently
 
         # Resolve receiver from x0
         x0 = snap.x[0]
         if x0 and x0 > 0x100000000:
-            # Try to get class name via ObjC runtime expression
             expr_result = frame.EvaluateExpression(
                 f"(const char *)object_getClassName((id){x0})"
             )

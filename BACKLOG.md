@@ -201,3 +201,67 @@ MACE implementation needed:
 - Dart mode detection (check if pc in libapp.so range)
 - Conditional register annotation switching to Dart names
 - Object pool dereference for string/constant lookup via x27
+
+## Context Panel v2 — Human-First Display
+Source: External usability feedback (Aug 2026)
+
+Current gap: MACE panel shows same information as LLDB, just better formatted.
+GEF shows MORE information than GDB, surfaced automatically.
+Target: Panel must be genuinely useful standalone before AI layer lands.
+
+### Priority improvements:
+
+1. Pointer dereferencing
+   Resolve pointer values to human-readable content inline
+   x0 = 0x302cf3a50 -> "i am groot!" (NSString)
+   x27 = 0x104a714e0 -> MACESecurityTest.__DATA.__objc_const
+   Implementation: SBProcess.ReadMemory() + string heuristic
+
+2. Changed register highlighting
+   Registers modified since last stop -> highlighted color
+   Unchanged registers -> dimmed
+   Implementation: ContextSnapshot diff between iterations
+
+3. Memory region labeling
+   Append [heap], [stack], [binary.__TEXT], [dylib] to pointer values
+   x0 = 0x302cf3a50 [heap]
+   x26 = 0x104a714e0 [MACESecurityTest.__DATA]
+   Implementation: SBProcess.GetMemoryRegionInfo()
+
+4. Inline string detection
+   Any valid pointer -> attempt string read -> display if printable
+   Max 64 chars, truncated with ellipsis
+   Covers NSString, C strings, Swift strings
+
+5. Branch prediction at current pc
+   Show likely next instruction path for conditional branches
+   cbz/cbnz/b.eq/b.ne etc -> show both paths, highlight taken
+   Makes "what happens next" answerable without stepping
+
+### Reference implementations:
+- GEF (hugsy/gef) - original inspiration, GDB
+- LLEF (foundryzero/llef, 489 stars) - GEF for LLDB, x86/ARM64/Go
+  Borrow: configurable rebase_offset for Ghidra/IDA compatibility
+
+### LLEF coexistence note:
+LLEF and MACE are competing stop hooks - do NOT run simultaneously.
+LLEF = general RE/VR. MACE = mobile AArch64 specialization.
+Study LLEF's UI design, do not combine.
+
+### LIEF integration (lief.re):
+Binary parsing backend for MACE context enrichment.
+pip install lief - works in LLDB Python environment.
+Use cases:
+- Automatic __text range for caller filter (replaces image dump sections)
+- Stub address resolution -> symbol names
+- ObjC selrefs parsing -> passive annotation without EvaluateExpression
+- Flutter libapp.so ELF parsing for Dart snapshot offsets
+New module: mace/core/binary_context.py
+
+### AI layer is the killer differentiator (v3):
+Panel improvements make v1 useful standalone.
+AI annotation makes MACE a different class of tool entirely:
+"You are stopped inside ISS ptrace check, x0=0x1f = PT_DENY_ATTACH,
+patch with reg write x8 0 at offset +1320"
+That answer cannot come from panel formatting - only from AI reasoning
+over deterministic register state. That is MACE's unique position.

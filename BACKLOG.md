@@ -320,3 +320,27 @@ Coordinate with MACE MCP server design to avoid overlap.
     Hopper            -> quick iOS disassembly, Swift demangling UI
     JEB               -> deep Android native + iOS ARM64 decompilation
     Together: complete static context feeding MACE dynamic observation
+
+## r2SMT — SMT-Assisted Opaque Predicate Deobfuscator
+Source: github.com/seifreed/r2SMT (Marc Rivero/@seifreed, r2con2025 author)
+Same author as r2morph
+
+SMT-assisted opaque predicate deobfuscator for radare2.
+Uses Z3/CVC5/Bitwuzla to mathematically prove whether conditional branches
+can go both ways. Proven single-direction branches = opaque predicates.
+
+AArch64 supported (multi-arch lifters: x86, x86_64, AArch64, AArch32/Thumb)
+
+Pipeline with MACE:
+  r2morph  -> adds opaque predicates as obfuscation
+  r2SMT    -> proves and removes opaque predicates statically
+  MACE     -> observes real execution below the obfuscation
+
+Verdicts:
+  AlwaysTrue / AlwaysFalse -> opaque predicate, proven obfuscation
+  BothPossible             -> genuine branch, MACE observes runtime state
+
+Install: cargo build --release (requires Rust 1.85+, radare2 6.1+, CMake)
+
+Status: Very early (2 stars, 12 commits) but architecturally sound.
+Complements r2morph + MACE as complete obfuscation/deobfuscation/analysis stack.

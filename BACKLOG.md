@@ -170,3 +170,34 @@ Coordinate with MACE MCP server design to avoid overlap.
   (MACE argument annotation must read sp offsets for Dart functions)
 - Blutter integration provides addresses for breakpoints without exported symbols
   (bridges the Frida gap Apvrille identifies at BlackAlps 2023)
+
+## Dart ARM64 Register Map (from Worawit Wangwarunyoo, HITB 2023)
+Source: Blutter author's primary presentation
+From dart/runtime/vm/constants_arm64.h
+
+When MACE context panel shows Flutter/Dart target:
+- x15 (R15) → Dart VM Stack Pointer (SPREG), NOT general register
+- x16 (R16) → TMP scratch
+- x17 (R17) → TMP2 scratch  
+- x21 (R21) → Dispatch Table Register
+- x22 (R22) → NULL_REG (always caches NullObject())
+- x24 (R24) → CODE_REG
+- x26 (R26) → THR (current Dart Thread)
+- x27 (R27) → PP (Object Pool Pointer)
+- x28 (R28) → HEAP_BITS
+- x4  (R4)  → ARGS_DESC_REG (Arguments Descriptor)
+- x5  (R5)  → IC_DATA_REG
+
+Calling convention:
+- Arguments passed on Dart stack (R15), NOT in x0-x7
+- Named parameters: R4 = Arguments Descriptor array
+- Dart stubs: use specific registers per ABI struct in constants_arm64.h
+
+iOS note: Pointer compression NOT enabled (requires entitlement)
+- Full 64-bit object pointers on palera1n iPad
+- Simplifies Dart object inspection via MACE memory reads
+
+MACE implementation needed:
+- Dart mode detection (check if pc in libapp.so range)
+- Conditional register annotation switching to Dart names
+- Object pool dereference for string/constant lookup via x27

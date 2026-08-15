@@ -83,14 +83,15 @@ class SwiftContext:
     def type_for_address(self, binary_name: str) -> str:
         """
         Best-effort type name from binary name.
-        Falls back to binary_name if no match.
+        Returns first non-system type found when binary_name matches module.
         """
-        if not self._loaded:
+        if not self._loaded or not binary_name:
             return ""
-        # Match against known types
+        # Extract module name from binary_name
+        module = binary_name.split('.')[0].replace(' ', '')
+        # Return first type that belongs to this module
         for type_name in self._field_map:
-            short = type_name.split('.')[-1]
-            if short.lower() in binary_name.lower():
+            if module and type_name.startswith(module + '.'):
                 return type_name
         return ""
 

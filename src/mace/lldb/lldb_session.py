@@ -169,7 +169,8 @@ def _annotate_objc_call(snap, frame, target) -> None:
 
         # Resolve receiver from x0
         x0 = snap.x[0]
-        if x0 and x0 > 0x100000000:
+        # Skip stack addresses (0x16xxxxxxxx on iOS) — not object pointers
+        if x0 and x0 > 0x100000000 and not (0x160000000 <= x0 <= 0x17fffffff):
             # Try ObjC runtime first
             expr_result = frame.EvaluateExpression(
                 f"(const char *)object_getClassName((id){x0})"
@@ -180,17 +181,14 @@ def _annotate_objc_call(snap, frame, target) -> None:
                     snap.objc_receiver = val.strip('"')
 
             # Fall back to SwiftContext if ObjC lookup failed
-            if not snap.objc_receiver and snap.binary_name:
-                # Find binary path from target modules
-                for i in range(target.GetNumModules()):
-                    mod = target.GetModuleAtIndex(i)
-                    fname = mod.GetFileSpec().GetFilename() or ""
-                    if snap.binary_name.split('.')[0] in fname and fname.endswith('.dylib'):
-                        bpath = mod.GetFileSpec().GetDirectory() + '/' + fname
-                        swift_ctx = _get_swift_context(bpath)
-                        if swift_ctx.is_loaded():
-                            snap.objc_receiver = swift_ctx.type_for_address(fname)
-                        break
+            if not snap.objc_receiver:
+                # Search cache by filename key (avoids iterating 600+ modules)
+                for key, ctx in _swift_context_cache.items():
+                    if ctx.is_loaded():
+                        result = ctx.type_for_address(snap.binary_name or "")
+                        if result:
+                            snap.objc_receiver = result
+                            break
 
         # Resolve selector from x1
         x1 = snap.x[1]

@@ -129,3 +129,97 @@ Options:
 
 Validated: caller filter working correctly (lr range check passes for debug dylib)
 Gap: type name resolution for Swift receivers
+
+## Static Analysis Tool Integration
+
+### iOS Static → MACE Dynamic Pipeline (Hopper)
+Hopper Disassembler — already licensed ($99 lifetime)
+
+Workflow:
+1. Load IPA/Mach-O in Hopper
+2. Swift symbol demangling automatic
+3. Find target function → copy offset
+4. MACE: br set -a <load_addr> + <offset>
+5. Observe registers at runtime
+
+Hopper strengths for iOS:
+- Fast Mach-O loading vs JEB
+- Native Swift demangling
+- Pseudo-code for ARM64
+- Python scripting API (Hopper v5+)
+- Lightweight for quick iteration
+
+### Android Static → MACE Dynamic Pipeline (JEB)
+JEB Android — monthly trial ($140/month) → annual ($1,200/year) if validated
+
+Workflow:
+1. Load APK or native .so in JEB
+2. JEB recovers DEX classes + native ARM64 symbols
+3. Find target function offset in JEB
+4. MACE: br set -a <load_addr> + <offset>
+5. Observe registers at runtime
+
+JEB strengths for Android/iOS:
+- DEX/Dalvik decompilation (Android Java/Kotlin)
+- ARM64 native decompilation (works on iOS Mach-O too)
+- Flutter libapp.so symbol recovery
+- Unity GameAssembly.so IL2CPP symbols
+- Python API (jeb.api) → MCP server integration
+
+Validation checklist (monthly trial):
+- Flutter libapp.so → Dart symbol recovery → MACE breakpoints
+- Unity GameAssembly.so → IL2CPP symbols → MACE breakpoints
+- iOS Mach-O → Swift decompilation quality vs Hopper
+- jeb.api Python prototype → MCP tool call feasibility
+
+### JEB + MACE MCP Integration (stretch goal, Nov or post-GA)
+mace_get_jeb_analysis(pc) → decompiled function context at current stop
+Combines static JEB context with live MACE register state in one agent call.
+Full static-to-dynamic pipeline in single MCP interface.
+
+## Static Analysis Tool Integration
+
+### iOS Static → MACE Dynamic Pipeline (Hopper)
+Hopper Disassembler — already licensed ($99 lifetime)
+
+Workflow:
+1. Load IPA/Mach-O in Hopper
+2. Swift symbol demangling automatic
+3. Find target function → copy offset
+4. MACE: br set -a <load_addr> + <offset>
+5. Observe registers at runtime
+
+Hopper strengths for iOS:
+- Fast Mach-O loading vs JEB
+- Native Swift demangling
+- Pseudo-code for ARM64
+- Python scripting API (Hopper v5+)
+- Lightweight for quick iteration
+
+### Android Static → MACE Dynamic Pipeline (JEB)
+JEB Android — monthly trial ($140/month) → annual ($1,200/year) if validated
+
+Workflow:
+1. Load APK or native .so in JEB
+2. JEB recovers DEX classes + native ARM64 symbols
+3. Find target function offset in JEB
+4. MACE: br set -a <load_addr> + <offset>
+5. Observe registers at runtime
+
+JEB strengths for Android/iOS:
+- DEX/Dalvik decompilation (Android Java/Kotlin)
+- ARM64 native decompilation (works on iOS Mach-O too)
+- Flutter libapp.so symbol recovery
+- Unity GameAssembly.so IL2CPP symbols
+- Python API (jeb.api) → MCP server integration
+
+Validation checklist (monthly trial):
+- Flutter libapp.so → Dart symbol recovery → MACE breakpoints
+- Unity GameAssembly.so → IL2CPP symbols → MACE breakpoints
+- iOS Mach-O → Swift decompilation quality vs Hopper
+- jeb.api Python prototype → MCP tool call feasibility
+
+### JEB + MACE MCP Integration (stretch goal, Nov or post-GA)
+mace_get_jeb_analysis(pc) → decompiled function context at current stop
+Combines static JEB context with live MACE register state in one agent call.
+Full static-to-dynamic pipeline in single MCP interface.

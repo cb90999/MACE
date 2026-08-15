@@ -8,6 +8,17 @@ Reads live register state from a stopped process and returns a populated snapsho
 
 import lldb
 from mace.core.context_snapshot import ContextSnapshot
+from mace.core.swift_context import SwiftContext
+
+# Module-level Swift context cache — loaded once per binary
+_swift_context_cache: dict[str, SwiftContext] = {}
+
+
+def _get_swift_context(binary_path: str) -> SwiftContext:
+    """Return cached SwiftContext for binary_path."""
+    if binary_path not in _swift_context_cache:
+        _swift_context_cache[binary_path] = SwiftContext(binary_path)
+    return _swift_context_cache[binary_path]
 
 
 def _read_gpr(frame: lldb.SBFrame, name: str) -> int:
@@ -159,6 +170,7 @@ def _annotate_objc_call(snap, frame, target) -> None:
         # Resolve receiver from x0
         x0 = snap.x[0]
         if x0 and x0 > 0x100000000:
+            # Try ObjC runtime first
             expr_result = frame.EvaluateExpression(
                 f"(const char *)object_getClassName((id){x0})"
             )
@@ -166,6 +178,19 @@ def _annotate_objc_call(snap, frame, target) -> None:
                 val = expr_result.GetSummary()
                 if val:
                     snap.objc_receiver = val.strip('"')
+
+            # Fall back to SwiftContext if ObjC lookup failed
+            if not snap.objc_receiver and snap.binary_name:
+                # Find binary path from target modules
+                for i in range(target.GetNumModules()):
+                    mod = target.GetModuleAtIndex(i)
+                    fname = mod.GetFileSpec().GetFilename() or ""
+                    if snap.binary_name.split('.')[0] in fname and fname.endswith('.dylib'):
+                        bpath = mod.GetFileSpec().GetDirectory() + '/' + fname
+                        swift_ctx = _get_swift_context(bpath)
+                        if swift_ctx.is_loaded():
+                            snap.objc_receiver = swift_ctx.type_for_address(fname)
+                        break
 
         # Resolve selector from x1
         x1 = snap.x[1]

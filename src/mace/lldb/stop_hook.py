@@ -58,4 +58,34 @@ def mace_off(debugger, command, result, internal_dict):
 def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand("command script add -f stop_hook.mace_on mace_on")
     debugger.HandleCommand("command script add -f stop_hook.mace_off mace_off")
+    debugger.HandleCommand("command script add -c stop_hook.MACESwiftLoad mace_swift_load")
     print("[MACE] Loaded. Use 'mace_on' after setting breakpoints to enable.")
+
+
+class MACESwiftLoad:
+    """mace_swift_load <path> — load Swift type context from local binary path."""
+
+    def __init__(self, debugger, internal_dict):
+        pass
+
+    def __call__(self, debugger, command, exe_ctx, result, internal_dict):
+        path = command.strip().strip('"').strip("'")
+        if not path:
+            print("[MACE] Usage: mace_swift_load <path_to_binary>")
+            return
+        from mace.core.swift_context import SwiftContext
+        from mace.lldb.lldb_session import _swift_context_cache
+        ctx = SwiftContext(path)
+        if ctx.is_loaded():
+            _swift_context_cache[path] = ctx
+            # Also cache by filename for lookup
+            import os
+            _swift_context_cache[os.path.basename(path)] = ctx
+            print(f"[MACE] Swift context loaded: {len(ctx.all_types())} types from {os.path.basename(path)}")
+            for t in ctx.all_types()[:5]:
+                print(f"  {t}")
+        else:
+            print(f"[MACE] Failed to load Swift context from {path}")
+
+    def get_short_help(self):
+        return "Load Swift type context from a local binary path"

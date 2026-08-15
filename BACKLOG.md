@@ -265,3 +265,58 @@ AI annotation makes MACE a different class of tool entirely:
 patch with reg write x8 0 at offset +1320"
 That answer cannot come from panel formatting - only from AI reasoning
 over deterministic register state. That is MACE's unique position.
+
+## MachOSwiftSection — Swift Type Annotation Solution
+Source: github.com/MxIris-Reverse-Engineering/MachOSwiftSection (284 stars)
+Discovered: Aug 2026 — solves Swift type annotation gap from MACESecurityTest session
+
+### Problem solved:
+object_getClassName() fails on pure Swift types (ISS, SwiftUI).
+MACE annotation returns empty for Swift receivers.
+MachOSwiftSection provides Swift-native type resolution.
+
+### Install:
+    brew install swift-section
+
+### Capabilities relevant to MACE:
+
+1. SwiftDump — type name resolution
+   Resolves x0 pointer to Swift type name
+   e.g. x0 = 0x104a714e0 -> IOSSecuritySuite.DebuggerChecker
+   Swift equivalent of object_getClassName()
+
+2. SwiftInspection MetadataReader
+   Demangles Swift types and symbols against Mach-O at runtime
+   Resolves mangled names in annotation panel
+
+3. Static field offsets (--emit-field-offsets)
+   Struct member layout computed statically
+   When MACE stops inside Swift struct:
+   offset +0x08 = ret_errorp, offset +0x10 = ret_pathp
+   Makes register interpretation dramatically more useful
+
+4. Protocol conformance mapping
+   ISS type hierarchy — which types conform to which protocols
+   Enriches annotation with protocol context
+
+### CLI usage before MACE session:
+    swift-section dump --architecture arm64 /path/to/binary
+    swift-section interface --architecture arm64 /path/to/binary
+
+### MACE integration:
+New module: mace/core/swift_context.py
+Parse swift-section output at session start
+Feed type names into annotation layer for Swift receivers
+Complement to LIEF (binary structure) + MachOSwiftSection (Swift semantics)
+
+### Note:
+Repo has MCP directory — watch for their MCP server implementation.
+May provide Swift binary analysis tools directly as MCP tools.
+Coordinate with MACE MCP server design to avoid overlap.
+
+### Relationship to other static tools:
+    LIEF              -> binary structure (ELF/Mach-O sections, imports)
+    MachOSwiftSection -> Swift semantics (types, fields, protocols)
+    Hopper            -> quick iOS disassembly, Swift demangling UI
+    JEB               -> deep Android native + iOS ARM64 decompilation
+    Together: complete static context feeding MACE dynamic observation

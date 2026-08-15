@@ -160,3 +160,13 @@ Coordinate with MACE MCP server design to avoid overlap.
     Hopper            -> quick iOS disassembly, Swift demangling UI
     JEB               -> deep Android native + iOS ARM64 decompilation
     Together: complete static context feeding MACE dynamic observation
+
+## Dart/Flutter AArch64 Specifics (from Apvrille BlackAlps 2023)
+- Object pool register tracking — identify and dereference Dart object pool pointer
+  (strings/constants not in __cstring, stored in pool accessed via dedicated register)
+- Integer tag awareness — Dart small integers have LSB tag, displayed value = actual * 2
+  (MACE must strip tag before showing decimal annotation)
+- Stack-based argument convention — Dart pushes args to stack not x0-x7
+  (MACE argument annotation must read sp offsets for Dart functions)
+- Blutter integration provides addresses for breakpoints without exported symbols
+  (bridges the Frida gap Apvrille identifies at BlackAlps 2023)

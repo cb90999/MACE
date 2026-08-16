@@ -182,12 +182,22 @@ def _annotate_objc_call(snap, frame, target) -> None:
 
             # Fall back to SwiftContext if ObjC lookup failed
             if not snap.objc_receiver:
-                # Search cache by filename key (avoids iterating 600+ modules)
+                # Use LLDB frame function name for precise Swift type resolution
+                func_name = frame.GetFunctionName() or ""
                 for key, ctx in _swift_context_cache.items():
                     if ctx.is_loaded():
-                        result = ctx.type_for_address(snap.binary_name or "")
+                        # Try precise function-based lookup first
+                        result = ctx.type_for_function(func_name)
+                        if not result:
+                            # Fall back to binary name matching
+                            result = ctx.type_for_address(snap.binary_name or "")
                         if result:
                             snap.objc_receiver = result
+                            # Also resolve selector from function name
+                            if not snap.objc_selector:
+                                sel = ctx.selector_for_function(func_name)
+                                if sel:
+                                    snap.objc_selector = sel
                             break
 
         # Resolve selector from x1

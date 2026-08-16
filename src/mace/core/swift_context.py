@@ -87,12 +87,44 @@ class SwiftContext:
         """
         if not self._loaded or not binary_name:
             return ""
-        # Extract module name from binary_name
         module = binary_name.split('.')[0].replace(' ', '')
-        # Return first type that belongs to this module
         for type_name in self._field_map:
             if module and type_name.startswith(module + '.'):
                 return type_name
+        return ""
+
+    def type_for_function(self, function_name: str) -> str:
+        """
+        Resolve Swift type from LLDB function name.
+        e.g. "ContentView.runChecks() at ContentView.swift:58"
+        returns "MACESecurityTest.ContentView"
+        """
+        if not self._loaded or not function_name:
+            return ""
+        # Strip file/line info
+        fname = function_name.split(' at ')[0].strip()
+        # Try matching against known types
+        for type_name in self._field_map:
+            short = type_name.split('.')[-1]
+            if short and (fname.startswith(short + '.') or
+                         f'.{short}.' in fname or
+                         fname.startswith(short + '(')):
+                return type_name
+        return ""
+
+    def selector_for_function(self, function_name: str) -> str:
+        """
+        Extract method/function name from LLDB function symbol.
+        e.g. "ContentView.runChecks() at ContentView.swift:58"
+        returns "runChecks()"
+        """
+        if not function_name:
+            return ""
+        fname = function_name.split(' at ')[0].strip()
+        # Extract last component after dot
+        parts = fname.split('.')
+        if len(parts) >= 2:
+            return parts[-1].split('(')[0]
         return ""
 
     def field_at_offset(self, type_name: str, offset: int) -> str:

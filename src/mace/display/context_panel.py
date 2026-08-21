@@ -64,7 +64,29 @@ def render_registers(snap: ContextSnapshot,
     lines.append(f"  {'lr':<6}  0x{snap.lr:016x}  # {snap.lr}u")
     lines.append(f"  {'sp':<6}  0x{snap.sp:016x}  # {snap.sp}u")
     lines.append(f"  {'pc':<6}  0x{snap.pc:016x}  # {snap.pc}u")
-    lines.append(f"  {'cpsr':<6}  0x{snap.cpsr:08x}")
+    # Decode CPSR condition flags
+    cpsr = snap.cpsr
+    n = (cpsr >> 31) & 1  # Negative
+    z = (cpsr >> 30) & 1  # Zero
+    c = (cpsr >> 29) & 1  # Carry
+    v = (cpsr >> 28) & 1  # Overflow
+    el = (cpsr >> 2) & 0x3  # Exception Level
+    flags = f"[N={n} Z={z} C={c} V={v} EL={el}]"
+    
+    # Human-readable flag interpretation
+    if z == 1 and n == 0:
+        meaning = "last cmp: equal"
+    elif n == 1 and v == 0:
+        meaning = "last cmp: less than"
+    elif n == 0 and v == 0:
+        meaning = "last cmp: greater than"
+    elif c == 1 and z == 0:
+        meaning = "last cmp: unsigned higher"
+    else:
+        meaning = ""
+    
+    meaning_str = f"  # {meaning}" if meaning else ""
+    lines.append(f"  {'cpsr':<6}  0x{snap.cpsr:08x}  {flags}{meaning_str}")
 
     return "\n".join(lines)
 

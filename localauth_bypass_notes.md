@@ -15,19 +15,76 @@ LAContext .deviceOwnerAuthentication bypass via two-stage register patch
 - Patch: reg write x0 1
 - Effect: canEvaluatePolicy returns YES → evaluatePolicy called
 
-### Stage 2 — reply block success forced
-- Function: closure #2 @Sendable (Bool, Error?) in authenticate()
-- Offset: 0x5788 from dylib base
-- Address: load_addr + 0x5788
-- Patch: reg write x0 1
-- Effect: success=true → "Access Granted - Secret Content Unlocked"
+### Stage 2 — success boolean check (CORRECTED)
+Original notes recorded Stage 2 at dylib offset 0x5788 (closure #2, the outer
+reply-block entry point). Re-validated via symbol-free technique on
+2026-08-21 and found the actual success-boolean comparison lives one level
+deeper.
+
+- Function: closure #1 @Swift.MainActor () -> () in closure #2 @Sendable
+  (Swift.Bool, Swift.Optional<Swift.Error>) -> () in
+  static LocalAuthChecker.authenticate() -> ()
+- Source: LocalAuthChecker.swift:21 (if success == true)
+- Dylib-relative offset: 0x59b4 (closure entry) / +48 bytes into closure body
+  for the actual comparison instructions
+- Instructions patched:
+    and    w8, w0, #0x1      ; w8 = success & 1
+    and    w9, w9, #0x1      ; w9 = true-literal & 1
+    subs   w8, w8, w9        ; compare
+    b.ne   <fail path>       ; branch if not equal
+- Patch: reg write w0 1 (before the 'and' executes)
+- Effect: comparison always evaluates equal -> falls through to
+  "Access Granted - Secret Content Unlocked"
 
 ## Result
 Before MACE: "Authentication Failed - No passcode configured"
 After MACE:  "Access Granted - Secret Content Unlocked"
 
-## MACE Commands
-TODO: paste your actual lldb/MACE command sequence here
+## Symbol-Free Bypass Technique (validated, ASLR-independent)
+
+Proven end-to-end on 2026-08-21 across two separate process launches with
+different ASLR slides. Technique requires zero hardcoded addresses and zero
+Swift symbol names -- only ObjC selector names, which survive stripping.
+
+### Stage 1 (canEvaluatePolicy guard)
+
+  br set -n "canEvaluatePolicy:error:"
+  c                              # hits inside LocalAuthentication framework
+  finish                         # returns to caller (own code) via return address
+  disassemble -c 20 -s <PC>      # walk forward ~13 instructions to find tbz
+  br set -a <tbz address>
+  c
+  reg write x0 1                 # force guard to pass
+  c
+
+### Stage 2 (success boolean check)
+
+  image lookup -r -n "closure #1.*closure #2.*authenticate"
+  # resolves the inner MainActor closure containing the real comparison,
+  # NOT the outer reply-block closure (which just dispatches to main queue)
+  breakpoint set -r "closure #1.*closure #2.*authenticate"
+  # sets 2 locations: partial apply forwarder + actual closure body
+  # disable the forwarder location, keep the closure body location
+  c
+  reg write w0 1                 # force success == true
+  c
+
+Result: "Access Granted - Secret Content Unlocked"
+
+### Why this matters for Stripped target
+
+canEvaluatePolicy:error: and evaluatePolicy:localizedReason:reply: are ObjC
+selectors resolved by the LocalAuthentication framework at runtime -- they
+survive Swift symbol stripping entirely, since ObjC dynamic dispatch requires
+the selector string regardless of what stripped the caller's own symbols.
+
+The image lookup -r / breakpoint set -r regex approach depends on Swift
+closure names being present in the symbol table, which do NOT survive
+STRIP_SWIFT_SYMBOLS. On the stripped build, Stage 2 will require either:
+(a) manual disassembly from the Stage 1 return address forward, hunting for
+    the equivalent branch-on-boolean pattern by inspection, or
+(b) binary diffing against the unstripped build's relative offsets, if the
+    Release/-O compiler optimization didn't restructure the closure.
 
 ## Build Verification
 
@@ -71,5 +128,24 @@ disassembly:
   br set -n "canEvaluatePolicy:error:"
   br set -n "evaluatePolicy:localizedReason:reply:"
 
-To be validated against the unstripped build first, confirming this lands
-at the same Stage 1/Stage 2 logic already proven manually.
+Validated against the unstripped build — confirmed this lands at the same
+Stage 1/Stage 2 logic (see "Symbol-Free Bypass Technique" section above).
+
+## Known MACE Bugs Found During This Session
+
+1. stop_hook.py handle_stop() always returns False, which tells LLDB's
+   SBStopHook API to auto-continue after rendering the panel. This makes
+   mace_on unusable for interactive patch-and-continue workflows (like this
+   bypass) since the process never stays stopped for register writes.
+   Fix: change return False -> return True in handle_stop().
+
+2. mace_swift_load uses subprocess.run() to invoke swift-section locally on
+   the host machine, but accepts device-side paths (e.g.
+   /private/var/containers/...) which don't exist on the host filesystem.
+   Fails silently with "[MACE] Failed to load Swift context from <path>".
+   Fix: either require the user to scp the binary locally first and document
+   this, or have MACE auto-pull the binary from the remote target via
+   SBTarget/SBModule APIs before invoking swift-section.
+
+Both bugs need fixing before a clean end-to-end MACE-native walkthrough of
+this bypass can be recorded (planned as next session).

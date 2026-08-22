@@ -15,6 +15,7 @@ class Color:
     GREEN   = "\033[32m"
     YELLOW  = "\033[33m"
     CYAN    = "\033[36m"
+    WHITE   = "\033[37m"
     GREY    = "\033[90m"
     DIM     = "\033[2m"
 
@@ -45,19 +46,13 @@ def render_registers(snap: ContextSnapshot,
     watch = watch or []
     lines = [_separator("registers")]
 
-    for i in range(0, 29, 2):
-        row = ""
-        for j in [i, i + 1]:
-            if j > 28:
-                break
-            hex_val  = snap.as_hex(j)
-            decimal  = snap.as_decimal(j)
-            ascii_v  = snap.as_ascii(j)
-            highlight = j in watch
-            w_val = snap.w_as_hex(j) if (snap.x[j] >> 32 == 0 and snap.x[j] != 0) else None
-            row += _format_register_line(f"x{j}", hex_val, decimal, ascii_v, w_val, highlight)
-            row += "    "
-        lines.append(row)
+    for j in range(29):
+        hex_val  = snap.as_hex(j)
+        decimal  = snap.as_decimal(j)
+        ascii_v  = snap.as_ascii(j)
+        highlight = j in watch
+        w_val = snap.w_as_hex(j) if (snap.x[j] >> 32 == 0 and snap.x[j] != 0) else None
+        lines.append(_format_register_line(f"x{j}", hex_val, decimal, ascii_v, w_val, highlight))
 
     lines.append("")
     lines.append(f"  {'fp':<6}  0x{snap.fp:016x}  # {snap.fp}u")
@@ -99,7 +94,7 @@ def render_stop_banner(snap: ContextSnapshot) -> str:
         f"{Color.BOLD}── MACE{Color.RESET}  "
         f"{stripped_tag}"
         f"{Color.GREEN}{snap.binary_name}{Color.RESET}  "
-        f"{Color.GREY}{snap.stop_reason}{iter_tag}{Color.RESET}"
+        f"{Color.WHITE}{snap.stop_reason}{iter_tag}{Color.RESET}"
         f"{slide_tag}"
     )
 

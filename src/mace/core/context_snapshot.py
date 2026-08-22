@@ -44,6 +44,11 @@ class ContextSnapshot:
     objc_receiver: str = ""        # x0 class name if stopped at/after objc_msgSend
     objc_selector: str = ""        # x1 selector string if stopped at/after objc_msgSend
 
+    # --- Swift "you are here" annotation ---
+    swift_location: str = ""       # e.g. "MACELocalAuthTest.LocalAuthChecker.authenticate()"
+                                    # populated whenever Swift context is loaded and the
+                                    # current frame resolves, independent of objc_msgSend
+
     # --- Derived helpers ---
 
     def w(self, n: int) -> int:

@@ -344,3 +344,41 @@ Install: cargo build --release (requires Rust 1.85+, radare2 6.1+, CMake)
 
 Status: Very early (2 stars, 12 commits) but architecturally sound.
 Complements r2morph + MACE as complete obfuscation/deobfuscation/analysis stack.
+
+## mace_swift_load — real remote-path resolution needed
+Source: LocalAuthTest MACE-native validation session, 2026-08-22
+
+Current _resolve_local_path() in swift_context.py attempts to resolve
+device-only paths via SBModule.GetFileSpec() on the target's loaded
+modules. This does NOT work in practice for app-owned dylibs pulled
+over a debugserver connection — GetFileSpec() returns the same remote
+path (e.g. /private/var/containers/...), not a local cached copy.
+(It does appear to work for system frameworks, which LLDB caches
+under ~/Library/Developer/Xcode/iOS DeviceSupport/.../Symbols/ — worth
+confirming whether that path is reachable via a different SBModule
+API, e.g. GetSymbolFileSpec() or GetPlatformFileSpec(), for system
+libraries specifically.)
+
+Current workaround: point mace_swift_load at a local Xcode DerivedData
+build artifact of the same binary instead of the device path. Works
+because Swift type metadata is static/load-address-independent, but
+requires the user to know and maintain that local path manually, and
+breaks if DerivedData is cleaned or the app is rebuilt under a new
+hash.
+
+Real fix options for a future session:
+1. Use SBProcess/SBTarget remote file APIs (if they exist) to actually
+   pull the file over the debugserver connection to a local temp path,
+   then point swift-section at that.
+2. Shell out to `scp` automatically if the device is reachable via the
+   same host/port already in use for debugserver, prompting the user
+   for confirmation first (this touches the filesystem, so should not
+   be silent).
+3. At minimum, auto-detect the matching local DerivedData path by
+   binary basename + most-recent-mtime heuristic, so the user doesn't
+   have to hand-paste the long path every session.
+
+Priority: medium. Not blocking — the workaround is functional and
+was used successfully in the 2026-08-22 validation run — but adds
+friction every session and will confuse a future user (or Stripped-
+build session) who doesn't already know the local path trick.

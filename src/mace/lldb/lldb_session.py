@@ -95,7 +95,41 @@ def snapshot_from_frame(frame: lldb.SBFrame,
     # --- Passive objc_msgSend annotation ---
     _annotate_objc_call(snap, frame, target)
 
+    # --- Swift "you are here" annotation ---
+    # Independent of objc_msgSend detection — populates whenever Swift
+    # context is loaded and the current frame's function name resolves,
+    # e.g. mid-function stops from `finish`/`step` that aren't at a
+    # message-send call site at all.
+    _annotate_swift_location(snap, frame)
+
     return snap
+
+
+def _annotate_swift_location(snap, frame) -> None:
+    """
+    "You are here" Swift annotation — independent of objc_msgSend detection.
+    Resolves the current frame's function name against any loaded
+    SwiftContext, so mid-function stops (finish/step, breakpoints not
+    at a message-send site) still show which Swift type/method you're
+    actually stopped inside.
+    """
+    try:
+        func_name = frame.GetFunctionName() or ""
+        if not func_name:
+            return
+        for ctx in _swift_context_cache.values():
+            if not ctx.is_loaded():
+                continue
+            type_name = ctx.type_for_function(func_name)
+            selector = ctx.selector_for_function(func_name)
+            if type_name and selector:
+                snap.swift_location = f"{type_name}.{selector}"
+                return
+            elif type_name:
+                snap.swift_location = type_name
+                return
+    except Exception:
+        pass  # Annotation is best-effort, never crash MACE
 
 
 def _get_stop_reason(thread: lldb.SBThread) -> str:

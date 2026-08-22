@@ -124,6 +124,9 @@ def render_panel(snap: ContextSnapshot,
     if compare:
         parts.append(_separator("comparison"))
         parts.append(render_match_status(snap, *compare))
+    if snap.swift_location:
+        parts.append(_separator("swift"))
+        parts.append(f"  {Color.CYAN}[{snap.swift_location}]{Color.RESET}")
     if snap.objc_receiver or snap.objc_selector:
         parts.append(_separator("objc"))
         receiver = snap.objc_receiver or "?"

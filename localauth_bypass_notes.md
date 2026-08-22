@@ -149,3 +149,82 @@ Stage 1/Stage 2 logic (see "Symbol-Free Bypass Technique" section above).
 
 Both bugs need fixing before a clean end-to-end MACE-native walkthrough of
 this bypass can be recorded (planned as next session).
+
+## MACE-Native Validation Run (2026-08-22)
+
+Full Stage 1 → Stage 2 bypass re-run through mace_on with both bugs fixed.
+First fully MACE-native execution of this bypass — panel firing at every
+stop, process staying stopped for interactive patching, Swift context
+annotated throughout. Confirms the two bug fixes and validates a new
+panel feature added in the same session.
+
+### Bugs confirmed fixed on real hardware
+
+1. stop_hook.py auto-continue (handle_stop returning False) — FIXED.
+   Process now stays stopped after every panel render. Verified via
+   `process status` showing "stopped" immediately after breakpoint hits,
+   across multiple iterations in the same session.
+
+2. swift_context.py silent failure on device-only paths — PARTIALLY FIXED.
+   Error messages are now specific and actionable (swift-section exit
+   code / stderr, or a clear "does not exist locally" message) instead
+   of a bare "Failed to load". The attempted auto-resolution via LLDB's
+   module cache (SBModule.GetFileSpec()) did NOT work in practice —
+   GetFileSpec() returns the same remote path, not a locally cached
+   copy, for app-owned dylibs pulled over a debugserver connection.
+   Practical workaround used instead: point mace_swift_load at the
+   local Xcode DerivedData build artifact (same binary, different
+   copy) rather than the device path. This works because Swift type
+   metadata is static data compiled into the binary — it does not
+   depend on load address or which physical copy is read.
+   See BACKLOG.md for the follow-up on a real fix.
+
+### New feature added and validated this session
+
+Swift "you are here" annotation (context_snapshot.swift_location +
+lldb_session._annotate_swift_location + context_panel swift section).
+
+Previously, MACE's Swift annotation only fired when stopped at an
+objc_msgSend-style call site (receiver in x0, selector in x1). Mid-
+function stops via `finish`/`step` — e.g. landing back inside
+authenticate() after canEvaluatePolicy returns — showed no Swift
+context at all, even with mace_swift_load already run.
+
+Fix: new independent annotation pass using frame.GetFunctionName()
+against the loaded SwiftContext, populated on every stop regardless
+of whether it's a message-send site. Confirmed working:
+
+  ── swift ──────────────────────────────────────
+    [MACELocalAuthTest.LocalAuthChecker.authenticate]
+
+Rendered correctly at both the post-canEvaluatePolicy `finish` stop
+and the Stage 1 tbz breakpoint, across a fresh process launch with a
+different ASLR slide than prior sessions.
+
+### Full sequence, MACE-native
+
+  mace_swift_load <local DerivedData path to .debug.dylib>
+  mace_on
+  br set -n "canEvaluatePolicy:error:"
+  c                                    # breakpoint 1, panel fires, objc section shown
+  c                                    # breakpoint 2 (tbz), panel fires, swift section shown
+  reg write x0 1
+  c                                    # falls through to evaluatePolicy naturally
+  breakpoint set -r "closure #1.*closure #2.*authenticate"
+                                       # 2 locations: forwarder (skip) + real closure
+  # (dismiss alert, retap Authenticate to trigger fresh cycle)
+  c  →  c  →  reg write x0 1  →  c    # Stage 1 again
+  c                                    # breakpoint 3.1, forwarder — skip
+  c                                    # breakpoint 3.2, real success check, panel fires
+  reg write w0 1
+  c
+
+Result: "Access Granted - Secret Content Unlocked"
+
+Note: w0 used at Stage 2 to match the 32-bit instruction width shown
+in disassembly (and w0, #0x1 / subs w8, w8, w9), but x0 and w0 are
+interchangeable here for writing the value 1 — setting the full
+64-bit x0 necessarily sets its w0 lower half identically. Only
+matters when the upper 32 bits carry meaning or the instruction reads
+the full 64-bit register, which is not the case at either patch point
+in this bypass.

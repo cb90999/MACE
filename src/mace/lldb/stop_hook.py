@@ -38,7 +38,7 @@ class MACEStopHook:
         snap  = snapshot_from_frame(frame, iteration=_iteration)
         panel = render_panel(snap, watch=WATCH_REGS, compare=COMPARE)
         stream.Print(panel + "\n")
-        return False
+        return True
 
 
 def mace_on(debugger, command, result, internal_dict):
@@ -76,7 +76,7 @@ class MACESwiftLoad:
         import os
         from mace.core.swift_context import SwiftContext
         from mace.lldb.lldb_session import _swift_context_cache
-        ctx = SwiftContext(path)
+        ctx = SwiftContext(path, exe_ctx=exe_ctx)
         if ctx.is_loaded():
             _swift_context_cache[path] = ctx
             _swift_context_cache[os.path.basename(path)] = ctx
@@ -85,6 +85,8 @@ class MACESwiftLoad:
                 result.AppendMessage(f"  {t}")
         else:
             result.AppendMessage(f"[MACE] Failed to load Swift context from {path}")
+            if ctx.load_error:
+                result.AppendMessage(f"[MACE]   reason: {ctx.load_error}")
 
     def get_short_help(self):
         return "Load Swift type context from a local binary path"

@@ -8,6 +8,8 @@ Parses type names and field offsets for Swift annotation layer.
 
 import subprocess
 import re
+import glob
+import os
 from pathlib import Path
 
 
@@ -20,40 +22,81 @@ class SwiftContext:
     def __init__(self, binary_path: str, exe_ctx=None):
         self.binary_path = binary_path
         self.load_error: str = ""       # last failure reason, for caller diagnostics
+        self.resolved_path: str = ""    # actual local path used, if different from
+                                         # binary_path (module cache or DerivedData
+                                         # fallback) -- "" means binary_path was used as-is
         self._type_map: dict[str, str] = {}      # mangled -> human name
         self._field_map: dict[str, dict] = {}    # type -> {offset: field_name}
         self._func_map: dict[str, str] = {}      # partial name -> full name
         self._loaded = False
         self._load(exe_ctx)
 
+    def _search_derived_data(self, basename: str) -> str:
+        """
+        Search Xcode's DerivedData for a local copy of a device-only
+        binary/dylib by basename. This is the practical fallback for
+        app-owned binaries: LLDB's module cache does not hold a local
+        copy of these when debugging over a debugserver connection
+        (only system frameworks get cached, under iOS DeviceSupport),
+        but Xcode's own build output usually has an identical copy
+        sitting locally already, since the debugged app was built
+        from that same DerivedData tree.
+
+        If multiple matches exist (old builds, other schemes), picks
+        the most recently modified one. This is a heuristic, not a
+        guarantee of exact correctness -- report the resolved path to
+        the caller so it can be sanity-checked against expectations.
+        """
+        derived_data = Path.home() / "Library" / "Developer" / "Xcode" / "DerivedData"
+        if not derived_data.exists():
+            return ""
+
+        pattern = str(derived_data / "**" / basename)
+        matches = glob.glob(pattern, recursive=True)
+        if not matches:
+            return ""
+
+        matches.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+        return matches[0]
+
     def _resolve_local_path(self, exe_ctx) -> str:
         """
         If binary_path doesn't exist on the local filesystem (e.g. a
         device-only path like /private/var/containers/... on a remote
-        iOS target), try to resolve it via LLDB's own module cache.
-        When attached to a remote target, LLDB already holds a local
-        file spec for loaded modules -- reuse that instead of asking
-        swift-section (a separate local process) to read a path that
-        only exists on the device.
+        iOS target), try two fallbacks in order:
+
+        1. LLDB's own module cache -- works for system frameworks,
+           which LLDB caches locally under iOS DeviceSupport, but does
+           NOT currently work for app-owned dylibs pulled over a plain
+           debugserver connection (GetFileSpec() just echoes back the
+           same remote path in that case -- see BACKLOG.md).
+
+        2. Xcode DerivedData search by basename -- the practical fix
+           for app-owned binaries, since they're normally built from a
+           local DerivedData tree that still has an identical copy.
         """
         if Path(self.binary_path).exists():
             return self.binary_path
 
-        if exe_ctx is None:
-            return self.binary_path  # nothing else we can try
-
-        target = exe_ctx.GetTarget()
-        if not target or not target.IsValid():
-            return self.binary_path
-
         basename = Path(self.binary_path).name
-        for module in target.module_iter():
-            file_spec = module.GetFileSpec()
-            if file_spec and file_spec.GetFilename() == basename:
-                local_spec = module.GetFileSpec()
-                local_path = str(Path(local_spec.GetDirectory() or "") / local_spec.GetFilename())
-                if Path(local_path).exists():
-                    return local_path
+
+        if exe_ctx is not None:
+            target = exe_ctx.GetTarget()
+            if target and target.IsValid():
+                for module in target.module_iter():
+                    file_spec = module.GetFileSpec()
+                    if file_spec and file_spec.GetFilename() == basename:
+                        local_spec = module.GetFileSpec()
+                        local_path = str(Path(local_spec.GetDirectory() or "") / local_spec.GetFilename())
+                        if Path(local_path).exists():
+                            self.resolved_path = local_path
+                            return local_path
+
+        derived_data_match = self._search_derived_data(basename)
+        if derived_data_match:
+            self.resolved_path = derived_data_match
+            return derived_data_match
+
         return self.binary_path  # fall through; _load will report the failure
 
     def _load(self, exe_ctx=None) -> None:
@@ -62,11 +105,12 @@ class SwiftContext:
 
         if not Path(resolved_path).exists():
             self.load_error = (
-                f"'{resolved_path}' does not exist on the local filesystem. "
+                f"'{resolved_path}' does not exist on the local filesystem, "
+                f"and no matching build artifact was found under "
+                f"~/Library/Developer/Xcode/DerivedData either. "
                 f"swift-section runs on the host machine and cannot read "
-                f"device-only paths directly. Either scp the binary/dylib "
-                f"to the M5 first and pass that local path, or attach to "
-                f"the target so MACE can resolve it from LLDB's module cache."
+                f"device-only paths directly -- pass a local path explicitly "
+                f"(e.g. an Xcode build product) if auto-detection can't find it."
             )
             return
 

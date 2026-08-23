@@ -81,6 +81,8 @@ class MACESwiftLoad:
             _swift_context_cache[path] = ctx
             _swift_context_cache[os.path.basename(path)] = ctx
             result.AppendMessage(f"[MACE] Swift context loaded: {len(ctx.all_types())} types from {os.path.basename(path)}")
+            if ctx.resolved_path:
+                result.AppendMessage(f"[MACE]   note: device path not found locally — auto-resolved to {ctx.resolved_path}")
             for t in ctx.all_types()[:5]:
                 result.AppendMessage(f"  {t}")
         else:

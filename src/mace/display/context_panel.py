@@ -16,8 +16,12 @@ class Color:
     YELLOW  = "\033[33m"
     CYAN    = "\033[36m"
     WHITE   = "\033[37m"
-    GREY    = "\033[90m"
-    DIM     = "\033[2m"
+    # Intensity-based styles (bright-black/dim) are intentionally NOT
+    # included here. They render at unreadable contrast on many terminal
+    # themes (dark-on-dark, light-on-light) since "dim"/"faint" is a
+    # relative adjustment the terminal applies to its own theme colors,
+    # not a fixed color. Use the 8 standard ANSI hues above instead —
+    # terminals remap those sensibly for whichever theme is active.
 
 
 def _terminal_width() -> int:
@@ -35,7 +39,7 @@ def _format_register_line(name, hex_val, decimal, ascii_val, w_val, highlight=Fa
     color = Color.YELLOW if highlight else Color.RESET
     line = f"  {color}{name:<6}{Color.RESET}  {hex_val}  # {decimal}u"
     if w_val is not None:
-        line += f"  {Color.DIM}w={w_val}{Color.RESET}"
+        line += f"  w={w_val}"
     if ascii_val:
         line += f"  '{ascii_val}'"
     return line
@@ -88,13 +92,29 @@ def render_registers(snap: ContextSnapshot,
 
 def render_stop_banner(snap: ContextSnapshot) -> str:
     stripped_tag = f"{Color.RED}[stripped]{Color.RESET} " if snap.is_stripped else ""
-    iter_tag = f"  iteration {snap.iteration}" if snap.iteration is not None else ""
-    slide_tag = f"  {Color.DIM}slide=0x{snap.aslr_slide:016x}  offset=0x{snap.file_offset():08x}{Color.RESET}" if snap.aslr_slide != 0 else ""
+
+    # Show the actual breakpoint ID (e.g. "breakpoint 2.1") when available —
+    # matches what LLDB's own "stop reason = breakpoint 2.1" line shows,
+    # so the two outputs read consistently instead of MACE saying just
+    # "breakpoint" with no way to tell which one fired.
+    if snap.stop_reason == "breakpoint" and snap.breakpoint_id:
+        reason_str = f"breakpoint {snap.breakpoint_id}"
+    else:
+        reason_str = snap.stop_reason
+
+    # Iteration is a global stop counter across the whole session, not
+    # tied to which breakpoint fired — useful for spotting loops, but
+    # not the primary "where am I" signal, so it's demoted after the
+    # reason rather than leading.
+    iter_tag = f"  (stop #{snap.iteration})" if snap.iteration is not None else ""
+
+    slide_tag = f"  slide=0x{snap.aslr_slide:016x}  offset=0x{snap.file_offset():08x}" if snap.aslr_slide != 0 else ""
     return (
         f"{Color.BOLD}── MACE{Color.RESET}  "
         f"{stripped_tag}"
         f"{Color.GREEN}{snap.binary_name}{Color.RESET}  "
-        f"{Color.WHITE}{snap.stop_reason}{iter_tag}{Color.RESET}"
+        f"{Color.WHITE}{reason_str}{Color.RESET}"
+        f"{iter_tag}"
         f"{slide_tag}"
     )
 

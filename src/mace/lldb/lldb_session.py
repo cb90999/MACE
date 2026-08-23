@@ -89,6 +89,7 @@ def snapshot_from_frame(frame: lldb.SBFrame,
     snap.binary_name = module.GetFileSpec().GetFilename() if module.IsValid() else "unknown"
     snap.is_stripped = _detect_stripped(target)
     snap.stop_reason = stop_reason or _get_stop_reason(frame.GetThread())
+    snap.breakpoint_id = _get_breakpoint_id(frame.GetThread())
     snap.iteration   = iteration
     snap.aslr_slide  = _compute_aslr_slide(target)
 
@@ -143,6 +144,23 @@ def _get_stop_reason(thread: lldb.SBThread) -> str:
         lldb.eStopReasonException:    "exception",
     }
     return mapping.get(reason, "unknown")
+
+
+def _get_breakpoint_id(thread: lldb.SBThread) -> str:
+    """
+    Return "breakpoint_id.location_id" (e.g. "2.1") when the stop reason
+    is a breakpoint hit, matching the format LLDB itself prints
+    ("stop reason = breakpoint 2.1"). Returns "" otherwise, or if the
+    breakpoint has multiple hit locations and we can't disambiguate.
+    """
+    try:
+        if thread.GetStopReason() != lldb.eStopReasonBreakpoint:
+            return ""
+        bp_id  = thread.GetStopReasonDataAtIndex(0)
+        loc_id = thread.GetStopReasonDataAtIndex(1)
+        return f"{bp_id}.{loc_id}"
+    except Exception:
+        return ""
 
 
 def _get_app_text_ranges(target) -> list:

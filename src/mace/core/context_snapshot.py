@@ -33,6 +33,7 @@ class ContextSnapshot:
 
     # --- Stop metadata ---
     stop_reason: str = ""          # e.g. "breakpoint", "step", "watchpoint"
+    breakpoint_id: str = ""        # e.g. "2.1" — populated when stop_reason is "breakpoint"
     binary_name: str = ""          # e.g. "ctf_eea" (stripped) or "MyApp"
     is_stripped: bool = False      # no symbols available
     iteration: Optional[int] = None  # loop counter if detected

@@ -75,9 +75,9 @@ Target: Panel must be genuinely useful standalone before AI layer lands.
    from actual memory region info. Flagged by external repo review
    (Aug 2026) as a target/device-specific heuristic living in core code
    -- would need validation against DVIA v2, 8ksec, and other targets
-   before trusting it generalizes. Real fix is this GetMemoryRegionInfo()
-   work, not a patch to the numeric range.
-
+   before trusting it generalizes. See docs/target-independence.md for
+   the general principle this instance exemplifies. Real fix is this
+   GetMemoryRegionInfo() work, not a patch to the numeric range.
 4. Inline string detection
    Any valid pointer -> attempt string read -> display if printable
    Max 64 chars, truncated with ellipsis

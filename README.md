@@ -72,3 +72,10 @@ below the layer most anti-instrumentation checks are built to detect.
 This is a narrower, more deterministic capability than a general
 bypass framework — see `ROADMAP.md` for what's actually been validated
 versus what's aspirational.
+
+## Engineering discipline
+
+MACE targets platform patterns, not test cases — a feature is only
+considered generalized once validated against targets that had no
+influence on how it was written. See `docs/target-independence.md`
+for the full principle and how it's applied in practice.

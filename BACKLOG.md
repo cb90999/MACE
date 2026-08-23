@@ -67,6 +67,16 @@ Target: Panel must be genuinely useful standalone before AI layer lands.
    x0 = 0x302cf3a50 [heap]
    x26 = 0x104a714e0 [MACESecurityTest.__DATA]
    Implementation: SBProcess.GetMemoryRegionInfo()
+   This also fixes existing debt: _annotate_objc_call() in
+   lldb_session.py currently distinguishes stack addresses from object
+   pointers via a hardcoded range (0x160000000-0x17fffffff) and a
+   0x100000000 pointer-vs-small-int threshold, both empirically
+   observed on one palera1n iPad/iOS 18.7.2 session rather than derived
+   from actual memory region info. Flagged by external repo review
+   (Aug 2026) as a target/device-specific heuristic living in core code
+   -- would need validation against DVIA v2, 8ksec, and other targets
+   before trusting it generalizes. Real fix is this GetMemoryRegionInfo()
+   work, not a patch to the numeric range.
 
 4. Inline string detection
    Any valid pointer -> attempt string read -> display if printable

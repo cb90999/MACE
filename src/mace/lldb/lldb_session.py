@@ -221,7 +221,14 @@ def _annotate_objc_call(snap, frame, target) -> None:
 
         # Resolve receiver from x0
         x0 = snap.x[0]
-        # Skip stack addresses (0x16xxxxxxxx on iOS) — not object pointers
+	# Skip stack addresses (0x16xxxxxxxx on iOS) — not object pointers
+        # TODO: generalize before merge — this range and the 0x100000000
+        # pointer-vs-small-int threshold below are both empirical guesses
+        # from observed addresses on one palera1n iPad/iOS 18.7.2 session,
+        # not a documented ABI guarantee. Will silently mis-annotate (or
+        # fail to annotate) on a different device, iOS version, or ASLR
+        # layout. Replace with SBProcess.GetMemoryRegionInfo()-based
+        # region classification — see BACKLOG.md Context Panel v2.
         if x0 and x0 > 0x100000000 and not (0x160000000 <= x0 <= 0x17fffffff):
             # Try ObjC runtime first
             expr_result = frame.EvaluateExpression(

@@ -96,7 +96,11 @@ Targets:
 
 Features to validate on these targets:
 - Passive objc_msgSend annotation with caller filtering (in progress)
-- mace_patch — register modification via SBValue API
+- mace_patch — register modification via SBValue API (done ✅ — validated
+  2026-08-23 on MACELocalAuthTest, both Stage 1/Stage 2 bypass patches
+  applied via mace_patch with correct before/after values, breakpoint
+  IDs, and full audit trail via mace_patch_history; DVIA v2 itself not
+  required for this validation since the mechanism is target-agnostic)
 - Syscall annotation (svc #0x80 + x16)
 - Hardware breakpoint mode
 

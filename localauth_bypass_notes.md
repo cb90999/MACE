@@ -228,3 +228,75 @@ interchangeable here for writing the value 1 — setting the full
 matters when the upper 32 bits carry meaning or the instruction reads
 the full 64-bit register, which is not the case at either patch point
 in this bypass.
+
+## mace_patch Validation Run (2026-08-23)
+
+Full Stage 1 -> Stage 2 bypass re-run using the new mace_patch command
+(SBValue-based register write via LLDB's Python API) in place of raw
+`reg write`, plus mace_patch_history to review the resulting audit
+trail. First real validation of mace_patch on live hardware.
+
+### Command
+
+  mace_patch <register> <value>
+
+Examples used this run: `mace_patch x0 1` (Stage 1, tbz guard) and
+`mace_patch w0 1` (Stage 2, success boolean).
+
+### What it does differently from raw `reg write`
+
+- Guards against patching a process that isn't stopped (prints a
+  clear MACE-branded message instead of LLDB's bare
+  "error: Process is running") -- addresses a mistake made repeatedly
+  in earlier sessions when a register write was attempted immediately
+  after `c` before actually confirming the process had stopped again.
+- Writes via frame.FindRegister() -> SBValue.SetValueFromCString(),
+  not the `register write` command text -- the API-level approach
+  specified in ROADMAP.md rather than shelling out to a command string.
+- Reads the register back after writing to confirm the value actually
+  took, rather than trusting the write call's success flag alone.
+- Records every successful patch to an in-session audit trail
+  (register, old value, new value, PC, breakpoint ID, containing
+  function, wall-clock timestamp), reviewable at any point via
+  mace_patch_history.
+
+### Live output, this run
+
+  (lldb) mace_patch x0 1
+  [MACE] x0: 0x0 -> 0x1  at 0x100af906c in static MACELocalAuthTest.LocalAuthChecker.authenticate() -> () (breakpoint 2.1)
+
+  (lldb) mace_patch w0 1
+  [MACE] w0: 0x0 -> 0x1  at 0x100af99e4 in closure #1 @Swift.MainActor () -> () in closure #2 @Sendable (Swift.Bool, Swift.Optional<Swift.Error>) -> () in static MACELocalAuthTest.LocalAuthChecker.authenticate() -> () (breakpoint 3.2)
+
+Result: "Access Granted - Secret Content Unlocked" (same as every
+prior validation of this bypass).
+
+### mace_patch_history output, this run
+
+  ── MACE patch history ──
+    [1]  12:44:22  x0: 0x0 -> 0x1  at 0x100af906c in static MACELocalAuthTest.LocalAuthChecker.authenticate() -> ()  breakpoint 2.1
+    [2]  12:47:27  x0: 0x0 -> 0x1  at 0x100af906c in static MACELocalAuthTest.LocalAuthChecker.authenticate() -> ()  breakpoint 2.1
+    [3]  12:48:26  w0: 0x0 -> 0x1  at 0x100af99e4 in closure #1 @Swift.MainActor () -> () in closure #2 @Sendable (Swift.Bool, Swift.Optional<Swift.Error>) -> () in static MACELocalAuthTest.LocalAuthChecker.authenticate() -> ()  breakpoint 3.2
+
+Entry [1] is a first Stage 1 patch attempt from earlier in the same
+session (before an alert reset the app state and the sequence was
+re-run cleanly); entries [2]-[3] are the successful run documented
+above. Kept as-is rather than cleared, to show the audit trail
+behaves correctly across a realistic multi-attempt session rather
+than only a single clean pass.
+
+### Status
+
+mace_patch and mace_patch_history validated end-to-end on real
+hardware: process-state guard confirmed (declines to patch a running
+process), SBValue-based write confirmed correct via before/after
+readback, and audit trail confirmed accurate across multiple patches
+in one session. ROADMAP.md v1 feature list updated accordingly.
+
+DVIA v2 itself was not required for this validation, since mace_patch
+is target-agnostic -- LocalAuthTest was sufficient to prove the
+mechanism. Remaining DVIA v2 / iGoat / InsecureBankv2 work is now
+scoped to the features that DO require those specific targets:
+passive objc_msgSend annotation against real Objective-C content
+(not just Swift-wrapped framework calls), syscall annotation, and
+hardware breakpoint mode.

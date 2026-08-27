@@ -78,6 +78,59 @@ Target: Panel must be genuinely useful standalone before AI layer lands.
    before trusting it generalizes. See docs/target-independence.md for
    the general principle this instance exemplifies. Real fix is this
    GetMemoryRegionInfo() work, not a patch to the numeric range.
+   UPDATE 2026-08-27: DVIA v2 is now a real second target for
+   validating the eventual fix (see dvia2_jailbreak_bypass_notes.md) --
+   this heuristic was not re-triggered in a new way this session, but
+   a related, separate bug WAS found in the same function; see below.
+
+3b. _annotate_objc_call fires selector resolution without confirming
+    a real objc_msgSend call site
+    Discovered: 2026-08-27, DVIA-v2 session
+    (dvia2_jailbreak_bypass_notes.md)
+
+    _annotate_objc_call's gate for attempting selector resolution on
+    x1 is only "is x1 numerically > 0x100000000" -- it never verifies
+    the current stop is actually at or immediately after a real
+    objc_msgSend-family call before running sel_getName() on whatever
+    x1 happens to contain.
+
+    Reproduced twice against DVIA-v2 at stops that were plain Swift
+    function/method entries, not message-sends:
+
+      -- objc --
+        [? ]ʍ\U00000004\xa1\xa5]   (x1 = a real UIViewController
+                                     pointer, not a selector)
+      -- objc --
+        [? class]                  (x1 = coincidentally a real
+                                     selector value, wrong context)
+
+    Root cause: on the modern ARM64 ObjC runtime, a SEL is literally a
+    pointer into the interned selector string table. sel_getName()
+    does no validation -- it reads raw memory from that address as a
+    C string. Any pointer-shaped non-selector value in x1 gets walked
+    as if it were one, printing whatever real memory is there (an
+    object's isa/ivars, in the first case above).
+
+    The second failure shape is the more dangerous of the two: a
+    real, legitimate-looking selector name (`class`) attributed to
+    the wrong context entirely, rather than obviously-garbled output
+    a researcher would immediately distrust.
+
+    Fix direction (not yet implemented): before attempting selector
+    resolution, confirm lr or the current pc corresponds to a call
+    into a known objc_msgSend-family stub address (objc_msgSend,
+    objc_msgSend_stret, objc_msgSendSuper2, etc.) rather than trusting
+    register value shape alone. This is a different, more fundamental
+    bug than 3's address-range heuristic -- that one has wrong
+    thresholds; this one has no verification step at all before
+    treating arbitrary register contents as a selector pointer.
+
+    Priority: medium-high. Silent misattribution (not just silent
+    failure) is a real trust problem for a tool whose core value
+    proposition is deterministic ground truth -- see
+    docs/target-independence.md and the "MACE is ground truth"
+    philosophy referenced there.
+
 4. Inline string detection
    Any valid pointer -> attempt string read -> display if printable
    Max 64 chars, truncated with ellipsis

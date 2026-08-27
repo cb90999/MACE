@@ -165,20 +165,30 @@ Clean debugserver attach, full MACE capability demonstration.
 
 Targets:
 - MASTG iOS UnCrackable L1 (done ✅)
-- DVIA v2 (Prateek's app — objc annotation, mace_patch)
+- DVIA v2 (Prateek's app — objc annotation, mace_patch) (done ✅ —
+  validated 2026-08-27, see dvia2_jailbreak_bypass_notes.md. Second
+  unrelated target for mace_patch (target-independence bar now met);
+  first real-ObjC-content validation of passive objc_msgSend
+  annotation. Also surfaced a new bug in the annotation path — see
+  BACKLOG.md "objc annotation fires without confirming real
+  objc_msgSend call site")
 - iGoat (OWASP iOS training — syscall annotation)
 - InsecureBankv2 (crypto key material in registers)
 
 Features to validate on these targets:
-- Passive objc_msgSend annotation with caller filtering (in progress)
+- Passive objc_msgSend annotation with caller filtering (partially
+  validated 2026-08-27 — confirmed correct on real ObjC dispatch via
+  DVIA-v2's [NSFileManager defaultManager] call, but also surfaced a
+  real bug: fires on non-message-send stops too when a register
+  happens to look pointer-shaped, producing misattributed output
+  rather than failing safely. See BACKLOG.md, not yet fixed)
 - mace_patch — register modification via SBValue API (done ✅ — validated
   2026-08-23 on MACELocalAuthTest, both Stage 1/Stage 2 bypass patches
   applied via mace_patch with correct before/after values, breakpoint
-  IDs, and full audit trail via mace_patch_history; DVIA v2 itself not
-  required for this validation since the mechanism is target-agnostic)
-- Syscall annotation (svc #0x80 + x16)
-- Hardware breakpoint mode
-
+  IDs, and full audit trail via mace_patch_history; validated again
+  2026-08-27 on DVIA-v2 — a second, genuinely unrelated target,
+  confirming the mechanism is target-agnostic rather than overfit to
+  MACELocalAuthTest)
 ### Priority 2 — Hardened targets once features are proven
 Anti-debug bypass is a prerequisite problem, not the MACE headline.
 Attempt these after all v1 features are validated on cooperative targets.

@@ -20,7 +20,8 @@
 ## v1 — iOS (headline target)
 - debugserver workflow on palera1n iPad (iOS 18.7.2, A10, PAC-free)
 - MASTG iOS UnCrackable Level 1-3
-- objc_msgSend interception and annotation
+- objc_msgSend interception and annotation (done ✅ — see Priority 1
+  section below for full validation history)
 - Syscall annotation (svc #0x80 + x16)
 - Hardware breakpoint mode for hardened targets
 - README "When to Use MACE" section
@@ -210,12 +211,17 @@ Targets:
 - InsecureBankv2 (crypto key material in registers)
 
 Features to validate on these targets:
-- Passive objc_msgSend annotation with caller filtering (partially
-  validated 2026-08-27 — confirmed correct on real ObjC dispatch via
-  DVIA-v2's [NSFileManager defaultManager] call, but also surfaced a
-  real bug: fires on non-message-send stops too when a register
-  happens to look pointer-shaped, producing misattributed output
-  rather than failing safely. See BACKLOG.md, not yet fixed)
+- Passive objc_msgSend annotation with caller filtering (done ✅ —
+  fully validated 2026-08-28. Real ObjC dispatch confirmed correct
+  via DVIA-v2's [NSFileManager defaultManager] call (2026-08-27); the
+  misattribution bug found the same day (fired on non-message-send
+  stops when a register happened to look pointer-shaped) is now fixed
+  — _is_objc_msgsend_call_site() confirms a real bl-to-objc_msgSend at
+  pc before trusting x0/x1. Reproduced the exact original bug scenario
+  live (jailbreakTest3 prologue, identical x1 value) three times —
+  correctly shows no annotation now — then confirmed the real call
+  site in the same function still annotates correctly. See
+  BACKLOG.md for the fix writeup)
 - mace_patch — register modification via SBValue API (done ✅ — validated
   2026-08-23 on MACELocalAuthTest, both Stage 1/Stage 2 bypass patches
   applied via mace_patch with correct before/after values, breakpoint

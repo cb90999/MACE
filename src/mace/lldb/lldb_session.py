@@ -204,14 +204,63 @@ def _get_app_text_range(target) -> tuple:
     return ranges[0] if ranges else (0, 0)
 
 
+def _is_objc_msgsend_call_site(frame, target) -> bool:
+    """
+    Confirm the instruction at the current pc is a direct branch (bl)
+    into an objc_msgSend-family stub, before trusting x0/x1 as a
+    receiver/selector pair.
+
+    Without this check, _annotate_objc_call fired on ANY stop where a
+    register happened to look pointer-shaped (> 0x100000000) — including
+    plain function entries with no message-send anywhere nearby —
+    producing misattributed output: a real UIViewController pointer
+    decoded as garbled "selector" text, or a real-but-wrong selector
+    name (e.g. "class") attributed to a completely unrelated call.
+    Found 2026-08-27, DVIA-v2 session; see BACKLOG.md.
+
+    This codifies the exact pattern already proven correct in practice
+    throughout this project: every time a breakpoint was deliberately
+    set AT the "bl ... ; symbol stub for: objc_msgSend" instruction
+    itself (not before or after it), the resulting annotation was
+    correct. This function makes that condition an explicit,
+    enforced gate instead of implicit practitioner knowledge.
+
+    Only handles the direct-bl case — the overwhelming common case for
+    Swift/ObjC message sends, which resolve through a dyld stub at a
+    statically-known address (visible in disassembly as the trailing
+    "; symbol stub for: objc_msgSend" comment). Indirect calls (blr,
+    where the target is only known at runtime via a register) are not
+    resolved — annotation is skipped rather than guessed at, matching
+    the "fail safe, not silently wrong" principle this fix exists for.
+    """
+    try:
+        pc_addr = frame.GetPCAddress()
+        instructions = target.ReadInstructions(pc_addr, 1)
+        if instructions.GetSize() == 0:
+            return False
+        insn = instructions.GetInstructionAtIndex(0)
+        mnemonic = (insn.GetMnemonic(target) or "").lower()
+        if mnemonic != "bl":
+            return False
+        comment = (insn.GetComment(target) or "").lower()
+        return "objc_msgsend" in comment
+    except Exception:
+        return False
+
+
 def _annotate_objc_call(snap, frame, target) -> None:
     """
     Passive objc_msgSend annotation - caller filtered.
-    Only annotates when lr falls within the app own __text section.
-    Skips Foundation/UIKit/system calls automatically.
-    No global breakpoint needed - reads state at existing stop.
+    Only annotates when stopped directly at a real objc_msgSend-family
+    call site (see _is_objc_msgsend_call_site) AND lr falls within the
+    app's own __text section (skips Foundation/UIKit/system-internal
+    message sends automatically). No global breakpoint needed - reads
+    state at whatever stop already happened.
     """
     try:
+        if not _is_objc_msgsend_call_site(frame, target):
+            return  # not actually at a message-send call — nothing to annotate
+
         # Caller filter - only annotate app-owned ObjC calls
         ranges = _get_app_text_ranges(target)
         lr = snap.lr
@@ -221,7 +270,7 @@ def _annotate_objc_call(snap, frame, target) -> None:
 
         # Resolve receiver from x0
         x0 = snap.x[0]
-	# Skip stack addresses (0x16xxxxxxxx on iOS) — not object pointers
+        # Skip stack addresses (0x16xxxxxxxx on iOS) — not object pointers
         # TODO: generalize before merge — this range and the 0x100000000
         # pointer-vs-small-int threshold below are both empirical guesses
         # from observed addresses on one palera1n iPad/iOS 18.7.2 session,
@@ -229,6 +278,10 @@ def _annotate_objc_call(snap, frame, target) -> None:
         # fail to annotate) on a different device, iOS version, or ASLR
         # layout. Replace with SBProcess.GetMemoryRegionInfo()-based
         # region classification — see BACKLOG.md Context Panel v2.
+        # Note: now gated behind _is_objc_msgsend_call_site above, so
+        # this heuristic only ever runs at a confirmed real call site —
+        # its remaining risk is misclassifying x0 there, not misfiring
+        # on unrelated stops (that failure mode is fixed by this change).
         if x0 and x0 > 0x100000000 and not (0x160000000 <= x0 <= 0x17fffffff):
             # Try ObjC runtime first
             expr_result = frame.EvaluateExpression(

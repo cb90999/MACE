@@ -326,3 +326,46 @@ build. Worth revisiting if this ever produces a wrong-type-resolved
 mismatch in practice. The remote-file-pull and scp approaches remain
 undone and lower priority now that the DerivedData search removes
 the actual day-to-day friction.
+
+
+## stop_hook.py — split into multiple modules once registration
+## pattern is validated
+Source: session discussion, 2026-08-28, after adding mace_grep/
+mace_search brought the file to 406 lines / 7 command classes
+
+Not urgent yet — 406 lines is still genuinely readable (one class per
+command, consistent docstrings), and the growth trajectory (roughly
++100-150 lines per session of active feature work) is a "soon," not
+a "now" problem. Flagging so it doesn't just keep growing by default
+without a deliberate decision.
+
+The real blocker isn't file length -- it's an untested assumption.
+Every command is currently registered as
+`command script add -c stop_hook.ClassName`, which only resolves
+because LLDB matches it against the flat `stop_hook` module name
+created by however the user's personal ~/.lldbinit does
+`command script import` on this specific file. This was a deliberate
+choice made early (see MACESwiftLoad's original addition) specifically
+to avoid gambling on whether `-c mace.lldb.some_new_file.ClassName`
+-style package-qualified resolution actually works for a genuinely
+separate module -- never tested live.
+
+Before attempting a real split: run one small, throwaway experiment
+first -- register a dummy command from a genuinely separate file
+using the package-qualified path, confirm it resolves correctly on
+real hardware, before committing to restructuring the real commands.
+Splitting blind risks breaking every command at once if the
+assumption turns out wrong.
+
+Four natural groupings already visible in the current single-file
+structure, ready to become their own modules once the registration
+pattern is confirmed safe:
+- Core panel toggle: MACEStopHook, mace_on, mace_off
+- Swift context loading: MACESwiftLoad
+- Patching + audit: MACEPatch, MACEPatchHistory
+- Introspection/query: MACEGrep, MACESearch
+
+Also worth noting: v3's MCP server work will need its own dedicated
+module (e.g. mace/mcp/server.py) regardless of what's decided here --
+so this file-organization question returns for real soon either way,
+just not urgently today.

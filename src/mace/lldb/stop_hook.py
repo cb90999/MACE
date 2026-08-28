@@ -5,6 +5,7 @@ lldb/stop_hook.py
 
 import lldb
 import sys
+import re
 import time
 
 from mace.lldb.lldb_session import snapshot_from_frame, _get_breakpoint_id
@@ -21,6 +22,13 @@ _hook_id   = None
 # so a full bypass sequence's patches can be reviewed/exported at the
 # end via mace_patch_history.
 _patch_history: list[dict] = []
+
+# In-session snapshot history — every ContextSnapshot built while
+# mace_on is active, kept for mace_search. Previously each snapshot
+# was rendered once and discarded; this is what lets mace_search ask
+# "did this address/name show up at an earlier stop" without the
+# user having to scroll back through (or paste) raw panel output.
+_snapshot_history: list = []
 
 
 class MACEStopHook:
@@ -43,6 +51,7 @@ class MACEStopHook:
             return False
 
         snap  = snapshot_from_frame(frame, iteration=_iteration)
+        _snapshot_history.append(snap)
         panel = render_panel(snap, watch=WATCH_REGS, compare=COMPARE)
         stream.Print(panel + "\n")
         return True
@@ -68,6 +77,8 @@ def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand("command script add -c stop_hook.MACESwiftLoad mace_swift_load")
     debugger.HandleCommand("command script add -c stop_hook.MACEPatch mace_patch")
     debugger.HandleCommand("command script add -c stop_hook.MACEPatchHistory mace_patch_history")
+    debugger.HandleCommand("command script add -c stop_hook.MACEGrep mace_grep")
+    debugger.HandleCommand("command script add -c stop_hook.MACESearch mace_search")
     print("[MACE] Loaded. Use 'mace_on' after setting breakpoints to enable.")
 
 
@@ -229,3 +240,167 @@ class MACEPatchHistory:
 
     def get_short_help(self):
         return "Show (or clear) the mace_patch audit trail for this session"
+
+
+class MACEGrep:
+    """
+    mace_grep <pattern> <lldb_command> — run any lldb command internally
+    and print only the lines matching <pattern> (regex, case-insensitive),
+    instead of the full raw output. Fixes the "paste a 700-line dump into
+    chat" problem — filter before it ever prints.
+
+    The inner command runs exactly as if typed directly (same target/
+    process/thread/frame context); only its output is intercepted.
+
+    Examples:
+      mace_grep DVIA "image list -o -f"
+      mace_grep objc_msgSend "disassemble -c 40"
+      mace_grep jailbreak "image lookup -rn jailbreak"
+    """
+
+    def __init__(self, debugger, internal_dict):
+        pass
+
+    def __call__(self, debugger, command, exe_ctx, result, internal_dict=None):
+        parts = command.strip().split(None, 1)
+        if len(parts) != 2:
+            result.AppendMessage("[MACE] Usage: mace_grep <pattern> <lldb_command>")
+            result.AppendMessage('[MACE]   e.g. mace_grep DVIA "image list -o -f"')
+            return
+
+        pattern, inner_command = parts
+        inner_command = inner_command.strip().strip('"').strip("'")
+
+        try:
+            regex = re.compile(pattern, re.IGNORECASE)
+        except re.error as e:
+            result.AppendMessage(f"[MACE] Invalid pattern '{pattern}': {e}")
+            return
+
+        inner_result = lldb.SBCommandReturnObject()
+        interpreter = debugger.GetCommandInterpreter()
+        # Two-arg form: runs against the debugger's currently selected
+        # target/process/thread/frame, same as typing the command
+        # directly at the prompt — no separate exe_ctx threading needed.
+        interpreter.HandleCommand(inner_command, inner_result)
+
+        output = inner_result.GetOutput() or ""
+        error_output = inner_result.GetError() or ""
+
+        if not inner_result.Succeeded() and not output:
+            result.AppendMessage(
+                f"[MACE] Command failed: {error_output.strip() or '(no output)'}"
+            )
+            return
+
+        lines = output.splitlines()
+        matches = [line for line in lines if regex.search(line)]
+
+        if not matches:
+            result.AppendMessage(
+                f"[MACE] No matches for '{pattern}' in {len(lines)} lines of output."
+            )
+            return
+
+        result.AppendMessage(
+            f"[MACE] {len(matches)} of {len(lines)} lines match '{pattern}':"
+        )
+        for line in matches:
+            result.AppendMessage(f"  {line}")
+
+    def get_short_help(self):
+        return "Run an lldb command, show only lines matching a pattern"
+
+
+class MACESearch:
+    """
+    mace_search <0xADDRESS | substring> — search every stop recorded
+    this session (while mace_on was active) for a register holding a
+    specific address, or an objc/swift/function-name annotation
+    containing a substring. Answers "did this show up before" without
+    scrolling back through, or pasting, prior panel output.
+
+    Address form matches any of x0-x28, fp, lr, sp, pc exactly.
+    String form matches (case-insensitive) against the objc receiver/
+    selector, swift_location, binary_name, or stop_reason recorded at
+    that stop.
+
+    Examples:
+      mace_search 0x92e875b00
+      mace_search NSFileManager
+      mace_search jailbreakTest2
+    """
+
+    def __init__(self, debugger, internal_dict):
+        pass
+
+    def __call__(self, debugger, command, exe_ctx, result, internal_dict=None):
+        query = command.strip()
+        if not query:
+            result.AppendMessage("[MACE] Usage: mace_search <0xADDRESS | substring>")
+            result.AppendMessage("[MACE]   e.g. mace_search 0x92e875b00")
+            result.AppendMessage("[MACE]        mace_search NSFileManager")
+            return
+
+        if not _snapshot_history:
+            result.AppendMessage(
+                "[MACE] No stops recorded yet this session. mace_search only "
+                "searches stops that happened while mace_on was active."
+            )
+            return
+
+        addr_query = None
+        try:
+            addr_query = int(query, 0)
+        except ValueError:
+            pass
+
+        matches = []
+        if addr_query is not None:
+            for snap in _snapshot_history:
+                hits = [f"x{i}" for i in range(29) if snap.x[i] == addr_query]
+                if snap.fp == addr_query:
+                    hits.append("fp")
+                if snap.lr == addr_query:
+                    hits.append("lr")
+                if snap.sp == addr_query:
+                    hits.append("sp")
+                if snap.pc == addr_query:
+                    hits.append("pc")
+                if hits:
+                    matches.append((snap, hits))
+        else:
+            needle = query.lower()
+            for snap in _snapshot_history:
+                haystack = " ".join(filter(None, [
+                    snap.objc_receiver, snap.objc_selector,
+                    snap.swift_location, snap.binary_name, snap.stop_reason,
+                ])).lower()
+                if needle in haystack:
+                    matches.append((snap, []))
+
+        if not matches:
+            result.AppendMessage(
+                f"[MACE] No matches for '{query}' across "
+                f"{len(_snapshot_history)} recorded stops."
+            )
+            return
+
+        result.AppendMessage(
+            f"[MACE] {len(matches)} of {len(_snapshot_history)} stops match '{query}':"
+        )
+        for snap, hits in matches:
+            bp_str = f"breakpoint {snap.breakpoint_id}" if snap.breakpoint_id else snap.stop_reason
+            where = snap.swift_location or (
+                f"{snap.objc_receiver} {snap.objc_selector}".strip()
+                if (snap.objc_receiver or snap.objc_selector) else ""
+            )
+            where_str = f"  in {where}" if where else ""
+            reg_str = f"  [{', '.join(hits)}]" if hits else ""
+            result.AppendMessage(
+                f"  [stop #{snap.iteration}]  {bp_str}  pc=0x{snap.pc:x}"
+                f"{where_str}{reg_str}"
+            )
+
+    def get_short_help(self):
+        return "Search all recorded stops this session for an address or annotation string"

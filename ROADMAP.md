@@ -116,6 +116,40 @@ worth knowing: Mobile Hacking Lab is the same org behind the
 MobileHackingLab validation targets already named in this roadmap —
 relevant landscape awareness, not a dependency.
 
+**Byte-level perplexity model for packing/obfuscation triage**
+(cocomelonc.github.io, "Malware analysis: part 11", July 2026) — NOT a
+local-LLM candidate for the DSPy routing line above; a materially
+smaller, different category of thing worth being precise about. A
+~600K-parameter decoder-only transformer, trained from scratch in
+~25 seconds, that predicts next-byte-given-previous-bytes over raw
+machine code and uses its own perplexity (how "surprised" it is) as a
+packing/encryption detector — ROC-AUC 0.994 on a synthetic (LZMA-based)
+packed-vs-normal benchmark in the source post. Classifier/anomaly-
+signal, not a reasoning engine.
+
+Two concrete ties to work already in this roadmap:
+- Practical mechanism for the ida-pro-mcp "de-obfuscate before
+  reasoning" lesson above — a fast, local, sub-second perplexity score
+  on a memory region gives the agent a cheap way to decide WHEN
+  normalization is needed before spending reasoning tokens on it,
+  rather than guessing.
+- Plausible fit for InsecureBankv2's named validation goal ("crypto key
+  material in registers", Priority 1 targets above) — a trained
+  byte-perplexity model is well suited to distinguishing "this looks
+  like a real key/random blob" from "this looks like a normal pointer
+  or structured data" in a register/memory dump.
+
+Caveats carried forward honestly from the source post, not glossed
+over: the trained weights in the post are useless for MACE as-is
+(trained on x86 ELF from /usr/bin; our domain is entirely AArch64
+Mach-O) -- would need a from-scratch retrain on a legitimate-ARM64-
+binary corpus, which the technique's own appeal (25s CPU training)
+makes cheap, not a blocker. Also: synthetic benchmark only (LZMA-
+simulated packing, not real-world packers/malware), and the author's
+own stated limitation that padding normal-looking bytes can lower a
+file's average surprise adversarially -- one signal among several,
+not a verdict on its own.
+
 ## objc_msgSend Annotation Design
 
 Problem: global objc_msgSend breakpoint fires thousands of times per second,

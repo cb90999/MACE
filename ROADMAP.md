@@ -151,6 +151,52 @@ own stated limitation that padding normal-looking bytes can lower a
 file's average surprise adversarially -- one signal among several,
 not a verdict on its own.
 
+**Tool-legibility lesson from the iGoat-Swift session (2026-08-29,
+not an external reference -- our own evidence)** -- while using
+mace_grep/mace_search live, Claude (acting as the analyst's assistant
+this session, the same role a v3 agent will play) made the exact class
+of mistake v3 needs to design against, twice, in different ways:
+
+1. Passed a `-i` flag to mace_grep out of habit from real `grep`, even
+   though mace_grep's own docstring says it's already always
+   case-insensitive -- there was never a flag to add. Not rejected
+   with a usage error; silently misparsed instead, corrupting the
+   pattern/command split and producing a confusing downstream lldb
+   error instead of a clear "no such flag" message.
+2. `image lookup -rn <pattern> <module>` returned empty results that
+   were genuinely ambiguous between "no matches" and "this module's
+   scoped search is silently broken" (confirmed the latter, separately,
+   via `image dump symtab` -- see igoat_investigation_notes.md). A
+   human noticing something felt off could stop and cross-check, which
+   is what happened, slowly. A v3 agent handed that same empty result
+   has no reason to doubt it and could state a wrong, security-relevant
+   conclusion ("no jailbreak detection found") with total confidence --
+   a worse failure than a malformed command, because nothing about a
+   clean empty result looks like a failure.
+
+Same underlying lesson as mrexodia's "route number-base conversion
+through a dedicated tool, don't trust the LLM's own math" above,
+generalized: don't trust an LLM's generic prior about what a tool
+*should* do or what an empty result *should* mean -- the tool itself
+has to make its actual contract and actual failure modes legible.
+Two concrete implications for v3's MCP layer specifically:
+
+- MCP tool schemas should be generated directly from MACE's own
+  source (docstrings, argument parsers) rather than maintained as
+  separate prose that can silently drift from what the code actually
+  does. The -i mistake happened even though the correct answer was
+  already sitting in mace_grep's own docstring -- documentation
+  existing isn't sufficient if nothing forces a check against it
+  before the agent acts.
+- Tools must fail loudly and specifically, for the agent's sake as
+  much as the human's -- reject an unknown flag with a clear message
+  naming the actual contract, and distinguish "confirmed zero matches"
+  from "search may not have run correctly against this module" rather
+  than returning the same silent empty result for both. Same "fail
+  safe, not silently wrong" principle already behind the objc-
+  annotation call-site fix and the address-range-heuristic TODO,
+  extended explicitly to agent legibility, not just human correctness.
+
 ## objc_msgSend Annotation Design
 
 Problem: global objc_msgSend breakpoint fires thousands of times per second,

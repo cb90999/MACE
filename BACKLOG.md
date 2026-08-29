@@ -78,10 +78,31 @@ Target: Panel must be genuinely useful standalone before AI layer lands.
    before trusting it generalizes. See docs/target-independence.md for
    the general principle this instance exemplifies. Real fix is this
    GetMemoryRegionInfo() work, not a patch to the numeric range.
-   UPDATE 2026-08-27: DVIA v2 is now a real second target for
+      UPDATE 2026-08-27: DVIA v2 is now a real second target for
    validating the eventual fix (see dvia2_jailbreak_bypass_notes.md) --
    this heuristic was not re-triggered in a new way this session, but
    a related, separate bug WAS found in the same function; see below.
+   UPDATE 2026-08-28 (research log): both DVIA v2 and MACELocalAuthTest
+   are PAC-free A10 targets -- neither actually tests whether this
+   heuristic (or the objc_msgSend call-site fix in 3b below) holds up
+   on a PAC-enabled chip, which is the real generalization risk here,
+   not just "a second app." github.com/jprx/darwin-vm (QEMU fork,
+   SPTM/TXM/MIE-aware) may be the fastest way to get a PAC-enabled
+   validation target without waiting on real hardware: boots actual
+   Darwin (iOS 26.6, even 27.0 beta) kernels to a root shell across
+   A14-A19, no jailbreak required, and exposes a GDB Remote Serial
+   Protocol debug server confirmed lldb-compatible in its own docs --
+   the same protocol MACE's connection layer already speaks, so no
+   MACE code changes should be needed to point at it. NOT a general
+   MACE test platform -- explicitly no SpringBoard/app UI/touch
+   interaction (own README: "don't expect... GUI apps... springboard
+   to work"), so it can't run DVIA-v2.app or MACELocalAuthTest.app as
+   real apps. Narrow, real value: a command-line, PAC-enabled dev
+   fixture (compile + codesign a small test program locally, run it
+   under the VM) to validate register/pointer/annotation logic against
+   PAC before the iPhone 11 (A13) hardware jailbreak path exists --
+   see "usbliter8" thread in chat history, RP2350 purchase planned
+   after Sept 20, timeline uncertain. This is available now instead.
 
 3b. _annotate_objc_call fires selector resolution without confirming
     a real objc_msgSend call site

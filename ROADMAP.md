@@ -207,7 +207,17 @@ Targets:
   annotation. Also surfaced a new bug in the annotation path — see
   BACKLOG.md "objc annotation fires without confirming real
   objc_msgSend call site")
-- iGoat (OWASP iOS training — syscall annotation)
+- iGoat (OWASP iOS training — syscall annotation) (in progress —
+  2026-08-29 session set up the app and investigated its "Method
+  Swizzling" jailbreak-detection challenge, but confirmed it's a
+  Cydia-path check with no ptrace/syscall content at all (see
+  igoat_investigation_notes.md) — wrong challenge for this goal, not
+  yet achieved. Real lesson learned along the way: this is the
+  project's first stripped-Release-build target (iGoat's own symbol
+  table has zero of the app's own class/method symbols), and strings
+  extraction on the real binary proved far faster than guessing
+  symbol names once that became clear. Next: try iGoat's other
+  challenges — Tampering, Binary Patching — for real ptrace content)
 - InsecureBankv2 (crypto key material in registers)
 
 Features to validate on these targets:

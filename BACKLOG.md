@@ -390,3 +390,73 @@ Also worth noting: v3's MCP server work will need its own dedicated
 module (e.g. mace/mcp/server.py) regardless of what's decided here --
 so this file-organization question returns for real soon either way,
 just not urgently today.
+
+
+## mace_grep bugs found during iGoat-Swift investigation (2026-08-29)
+Source: igoat_investigation_notes.md
+
+Both found live, mid-investigation. Neither blocked the session (both
+had usable workarounds found in the moment) but both are real,
+reproducible parsing bugs worth fixing properly.
+
+### Bug A -- `-i` flag doesn't exist, silently corrupts argument parsing
+mace_grep is already always case-insensitive by design (re.IGNORECASE
+baked into the pattern compile) -- there was never a flag to add.
+Passing one anyway wasn't rejected with a usage error; instead it got
+consumed as if it were the search pattern itself, shifting the rest of
+the command incorrectly:
+
+  mace_grep -i "jailbreak" "image dump symtab iGoat-Swift"
+  → [MACE] Command failed: error: 'jailbreak' is not a valid command.
+
+Fix direction: parts[0].split(None, 1) currently assumes the first
+whitespace-separated token is always the pattern. Should either
+explicitly reject/ignore a leading "-i" with a clear message ("mace_grep
+is already case-insensitive, no -i needed"), or more robustly, stop
+assuming position 0 is always the pattern and use a real flag parser.
+
+### Bug B -- pattern argument isn't quote/escape-stripped, only the inner command is
+inner_command has `.strip().strip('"').strip("'")` applied; pattern
+does not. Any pattern that legitimately needs quoting (spaces, regex
+metacharacters) carries the literal quote/escape characters into the
+compiled regex, guaranteeing zero matches even when real matches
+exist:
+
+  mace_grep "OBJC_CLASS_\$_" "image dump symtab iGoat-Swift"
+  → [MACE] No matches for '"OBJC_CLASS_\$_"' in 9475 lines of output.
+
+Note the literal quotes and backslash still present in the error
+message's echoed pattern -- confirms they were never stripped before
+regex compilation. Fix direction: apply the same
+.strip().strip('"').strip("'") normalization to the pattern argument
+that inner_command already gets, before regex compilation.
+
+Workaround used this session for both: avoid needing quotes/escapes
+in the pattern at all where possible (e.g. "OBJC_CLASS" instead of
+"OBJC_CLASS_\$_" -- $ isn't needed for a substring match here).
+
+## Breakpoint insertion failure -- Foundation fileExistsAtPath:, iGoat-Swift session (2026-08-29)
+Source: igoat_investigation_notes.md
+
+  br set -a 0x181872f44
+  → warning: failed to set breakpoint site at 0x181872f44 for
+    breakpoint 2.1: error: 9 sending the breakpoint request
+
+lldb still created the breakpoint object and reported a clean
+"Breakpoint 2: address = ..." despite the warning -- easy to miss
+that the underlying debugserver write likely failed. Confirmed via
+non-fire: triggered the code path that should have hit this address
+(Foundation's -[NSFileManager fileExistsAtPath:], called by iGoat's
+Cydia-path check) and the breakpoint never fired, while the app's
+behavior was otherwise consistent with the check having run normally.
+
+Not yet root-caused -- no other breakpoint this project has produced
+this warning. Retroactively raises an open question about an earlier
+breakpoint in the same session (libsystem_kernel.dylib's __ptrace,
+no warning shown) that also never fired across several attempts --
+absence of the warning is a real point in its favor but not
+independent confirmation it actually worked. Worth watching for
+recurrence of "error: 9 sending the breakpoint request" specifically
+-- if it shows up again, especially against shared-cache library
+addresses, treat any breakpoint set the same session with more
+suspicion even without an explicit warning.

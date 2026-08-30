@@ -103,6 +103,16 @@ Target: Panel must be genuinely useful standalone before AI layer lands.
    PAC before the iPhone 11 (A13) hardware jailbreak path exists --
    see "usbliter8" thread in chat history, RP2350 purchase planned
    after Sept 20, timeline uncertain. This is available now instead.
+   UPDATE 2026-08-30: CB flagged a live, concrete motivating example
+   for this exact item, reviewing a real raw panel screenshot (DVIA-v2,
+   mach_msg2_trap stop) -- x0/x1/x3/x5 all shown as large, meaningless
+   unsigned decimals (e.g. x0 = 6127837432u) when they're genuinely
+   stack/pointer addresses. Decimal tells a researcher nothing hex
+   doesn't already show better for address-shaped values -- exactly
+   the gap this backlog item exists to close. Worth citing this
+   screenshot/example directly when the GetMemoryRegionInfo() work
+   happens, as a concrete "why this matters" case beyond the abstract
+   description above.
 
 3b. _annotate_objc_call fires selector resolution without confirming
     a real objc_msgSend call site
@@ -519,3 +529,39 @@ than showing a number that looks real but isn't. Not yet fixed.
 Neither bug affects the objc or syscall annotation features
 themselves -- both are display/formatting issues in the stop-banner
 line.
+
+
+## Register panel — show signed reinterpretation for negative-looking values (2026-08-30)
+Source: session discussion, reviewing a real DVIA-v2/mach_msg2_trap
+panel screenshot
+
+The general register panel (render_registers() in context_panel.py)
+always shows the decimal column as a raw unsigned interpretation, even
+when the top bit is set. Concretely, in the reviewed screenshot:
+
+  x16    0xfffffffffffffd1  # 18446744073709551569u
+
+That's the exact same register value _annotate_syscall() (added this
+session) already correctly reinterprets as signed -47 to identify a
+Mach trap -- the general panel just doesn't apply that same logic to
+the decimal column it shows for every register, so a human reading
+the raw panel sees a confusing 20-digit number where a signed value
+would immediately read as "this is probably meaningful as -47, likely
+a small negative number, not a huge positive one."
+
+Fix direction: in _format_register_line() / render_registers(), when
+the top bit (bit 63) is set, show the signed reinterpretation
+alongside (or instead of) the unsigned one -- e.g.
+"# -47i (18446744073709551569u)" or similar. Reuse the exact
+sign-reinterpretation logic already written and tested for
+_annotate_syscall() (raw - (1 << 64) if raw >= (1 << 63) else raw)
+rather than re-deriving it.
+
+Distinct from, but related to, the memory-region-labeling item above
+(Context Panel v2, item 3) -- that one is about giving ADDRESS-shaped
+values (x0, x1, x3, x5 in the same screenshot -- genuinely large
+positive numbers, stack/heap pointers) a real region label instead of
+a raw decimal; this one is specifically about correctly signed
+NEGATIVE-looking values (x16 here) being shown as if they were huge
+positive numbers when they're not. Both are real, separate
+readability gaps in the same panel, surfaced by the same screenshot.

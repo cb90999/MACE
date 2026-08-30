@@ -198,6 +198,32 @@ Two concrete implications for v3's MCP layer specifically:
   annotation call-site fix and the address-range-heuristic TODO,
   extended explicitly to agent legibility, not just human correctness.
 
+**v3 design philosophy: "guide through verifiable ground truth," not
+"guide through trust"** (CB, 2026-08-30) -- MACE/MACE Armory's v3
+posture is close to Morpheus guiding Neo: the agent explains and
+proposes, the human decides and acts, never the reverse. Worth being
+precise about where the analogy is exact and where MACE's actual bar
+is higher, since the difference is the whole point:
+
+Morpheus guides through trust -- Neo has no independent way to verify
+what he's told, at least early on; the knowledge asymmetry is total.
+MACE is built to guide through VERIFIABLE ground truth instead -- the
+agent doesn't ask the analyst to trust its explanation, it shows them
+exactly what the deterministic hardware state actually says (real
+register values, a real breakpoint ID, a real syscall number decoded
+honestly or flagged as unrecognized), so the analyst can check it
+themselves. This is the actual throughline connecting mace_patch's
+audit trail, the objc/syscall annotation "fail safe, never guess"
+design, and the idamcp Security Dashboard reference above (explicit
+human approve/deny on every consequential action) -- all of it exists
+specifically so the human's trust in an agent's suggestion never has
+to be blind, unlike Neo's.
+
+Likely to land well with the actual audience (mobile security
+researchers, largely the demographic most likely to get the
+reference) -- worth keeping as a real framing device for how v3 is
+described externally, not just an internal design note.
+
 ## objc_msgSend Annotation Design
 
 Problem: global objc_msgSend breakpoint fires thousands of times per second,

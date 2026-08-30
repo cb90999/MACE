@@ -22,7 +22,8 @@
 - MASTG iOS UnCrackable Level 1-3
 - objc_msgSend interception and annotation (done ✅ — see Priority 1
   section below for full validation history)
-- Syscall annotation (svc #0x80 + x16)
+- Syscall annotation (svc #0x80 + x16) (done ✅ — see Priority 1
+  section below for full validation history)
 - Hardware breakpoint mode for hardened targets
 - README "When to Use MACE" section
 
@@ -253,17 +254,14 @@ Targets:
   annotation. Also surfaced a new bug in the annotation path — see
   BACKLOG.md "objc annotation fires without confirming real
   objc_msgSend call site")
-- iGoat (OWASP iOS training — syscall annotation) (in progress —
-  2026-08-29 session set up the app and investigated its "Method
-  Swizzling" jailbreak-detection challenge, but confirmed it's a
-  Cydia-path check with no ptrace/syscall content at all (see
-  igoat_investigation_notes.md) — wrong challenge for this goal, not
-  yet achieved. Real lesson learned along the way: this is the
-  project's first stripped-Release-build target (iGoat's own symbol
-  table has zero of the app's own class/method symbols), and strings
-  extraction on the real binary proved far faster than guessing
-  symbol names once that became clear. Next: try iGoat's other
-  challenges — Tampering, Binary Patching — for real ptrace content)
+- iGoat (OWASP iOS training — syscall annotation) (ruled out ✅ —
+  confirmed 2026-08-30 via full source clone: zero ptrace/sysctl/
+  task_get_exception_ports/getppid/fork() anywhere in the entire
+  iGoat-Swift source tree, across every challenge, not just Method
+  Swizzling. iGoat is the wrong TARGET for syscall content, not just
+  the wrong challenge — see syscall_annotation_notes.md. Actual
+  syscall-annotation validation achieved via mach_msg2_trap instead;
+  see Features section below)
 - InsecureBankv2 (crypto key material in registers)
 
 Features to validate on these targets:
@@ -285,12 +283,35 @@ Features to validate on these targets:
   2026-08-27 on DVIA-v2 — a second, genuinely unrelated target,
   confirming the mechanism is target-agnostic rather than overfit to
   MACELocalAuthTest)
+- Syscall annotation — svc #0x80 + x16 (done ✅ — built and validated
+  live 2026-08-30, see syscall_annotation_notes.md. Same pattern-
+  recognition approach as objc_msgSend annotation: _is_syscall_site()
+  recognizes a real "svc #0x80" wherever a stop lands on one, no
+  placed breakpoint on the syscall itself needed. Correctly handles
+  BOTH BSD syscalls and Mach traps via x16's sign (confirmed live:
+  libsystem_kernel.dylib's macx_swapon uses a Mach trap, not a BSD
+  syscall, at the identical instruction shape) — validated against
+  mach_msg2_trap, first real attempt: [trap #47] (Mach trap), x16
+  correctly reinterpreted as signed, honestly reported as
+  unrecognized rather than guessed. iGoat ruled out entirely as a
+  source of real syscall content along the way (see Targets above);
+  MASTG UnCrackable L2 confirmed to have real, functional
+  ptrace(PT_DENY_ATTACH) anti-debug on iOS 18.7.2 but proved
+  unreachable via debugserver-by-path for reasons not yet understood
+  — real finding in its own right, logged in full, not needed for
+  this feature's validation in the end)
 ### Priority 2 — Hardened targets once features are proven
 Anti-debug bypass is a prerequisite problem, not the MACE headline.
 Attempt these after all v1 features are validated on cooperative targets.
 
 Targets:
-- MASTG iOS UnCrackable L2 (ptrace loop — needs Liberty Lite or bypass tweak)
+- MASTG iOS UnCrackable L2 (ptrace loop — needs Liberty Lite or bypass
+  tweak) (real anti-debug confirmed 2026-08-30 — ptrace(PT_DENY_ATTACH)
+  genuinely functional on iOS 18.7.2 when launched normally, confirmed
+  via the documented debugserver-segfault-on-attach signature. Not yet
+  attempted via a route that both catches the check AND allows
+  continued debugging — see syscall_annotation_notes.md. Independently
+  useful: reproducible confirmation of OWASP's own known issue #1634)
 - MASTG iOS UnCrackable L3
 - Garuda Defender APK analysis
 - Production app assessments

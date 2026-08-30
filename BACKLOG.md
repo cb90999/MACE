@@ -435,6 +435,14 @@ Workaround used this session for both: avoid needing quotes/escapes
 in the pattern at all where possible (e.g. "OBJC_CLASS" instead of
 "OBJC_CLASS_\$_" -- $ isn't needed for a substring match here).
 
+UPDATE 2026-08-30 (syscall_annotation_notes.md): Bug B recurred live
+during the DVIA-v2 syscall-annotation session --
+mace_grep "write|atomically|documentsDirectory|dataFilePath|NSDictionary"
+matched only 1 of 770 lines (the quoted first/last alternatives were
+corrupted the same way). Confirms the bug is real and reproducible,
+not a one-off; still not fixed. Same workaround applied (dropped the
+quotes, pattern had no spaces so this was safe).
+
 ## Breakpoint insertion failure -- Foundation fileExistsAtPath:, iGoat-Swift session (2026-08-29)
 Source: igoat_investigation_notes.md
 
@@ -460,3 +468,54 @@ recurrence of "error: 9 sending the breakpoint request" specifically
 -- if it shows up again, especially against shared-cache library
 addresses, treat any breakpoint set the same session with more
 suspicion even without an explicit warning.
+
+UPDATE 2026-08-30 (syscall_annotation_notes.md): the open question
+above is now resolved differently than expected. A live session
+extensively re-tested shared-cache breakpoints (four separate
+libsystem_kernel.dylib symbols, both software and hardware, against
+confirmed real code execution) and initially concluded shared-cache
+placement itself was the common factor in every failure. That theory
+was then DISPROVEN the same session: a breakpoint on
+libsystem_kernel.dylib's mach_msg2_trap (the exact same shared-cache
+image as every failure) fired immediately, first attempt. The real,
+better-supported explanation across all of today's evidence: every
+failure was either a genuinely one-shot call, or a call whose
+containing code path was confirmed (via thread list) to never
+actually execute on that run -- not shared-cache placement, which is
+demonstrably fine. This specific Foundation/error-9 instance remains
+unexplained on its own terms, but the broader "shared cache
+breakpoints are unreliable" generalization it seemed to support does
+not hold.
+
+## Two new display bugs found via a genuinely new thread (2026-08-30)
+Source: syscall_annotation_notes.md
+
+Found while single-stepping toward DVIA-v2's real plist write. A
+normal GCD worker-pool thread got created mid-session
+(start_wqthread) -- routine, unrelated to the target being debugged
+-- and MACE's panel rendered for that stop too, surfacing two real,
+previously-unseen bugs.
+
+### Bug A -- malformed breakpoint ID on this thread's stop
+Rendered as "breakpoint 18446744073709551612.1" -- almost certainly
+a -4 value misread as unsigned (2^64 - 4 = 18446744073709551612).
+Likely _get_breakpoint_id()'s GetStopReasonDataAtIndex() returning a
+signed value not being reinterpreted correctly -- similar in spirit
+to (but a distinct bug from) the signed-x16 handling added for
+syscall annotation the same session. Not yet fixed.
+
+### Bug B -- nonsensical ASLR offset on a stop outside the main module
+Shown as slide=0x...ac000 offset=0x1fbaf1aa8, which doesn't
+correspond to pc - slide for this stop at all. Root cause:
+_compute_aslr_slide() always uses the MAIN app module's base (module
+index 0) regardless of which image the actual stop is in --
+meaningless once a stop happens inside a different image
+(libsystem_pthread.dylib here) on another thread. Fix direction:
+either compute slide per-image (resolve which module actually
+contains pc, use that module's base) or suppress the offset field
+entirely when pc falls outside the main module's known range, rather
+than showing a number that looks real but isn't. Not yet fixed.
+
+Neither bug affects the objc or syscall annotation features
+themselves -- both are display/formatting issues in the stop-banner
+line.

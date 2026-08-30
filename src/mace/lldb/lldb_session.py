@@ -103,8 +103,15 @@ def snapshot_from_frame(frame: lldb.SBFrame,
     # message-send call site at all.
     _annotate_swift_location(snap, frame)
 
-    return snap
+    # --- Passive syscall annotation ---
+    # Independent of objc/Swift — populates whenever the current stop
+    # happens to land directly on a real "svc #0x80" instruction,
+    # whatever the reason for the stop (breakpoint, single-step, or
+    # otherwise). Doesn't require a breakpoint placed on the syscall
+    # itself — recognizes it wherever it's encountered.
+    _annotate_syscall(snap, frame, target)
 
+    return snap
 
 def _annotate_swift_location(snap, frame) -> None:
     """
@@ -322,5 +329,104 @@ def _annotate_objc_call(snap, frame, target) -> None:
                 val = expr_result.GetSummary()
                 if val:
                     snap.objc_selector = val.strip('"')
+    except Exception:
+        pass  # Annotation is best-effort, never crash MACE
+
+
+
+def _is_syscall_site(frame, target) -> bool:
+    """
+    Confirm the instruction at the current pc is a raw "svc #0x80" —
+    the single trap instruction AArch64/XNU uses for BOTH BSD syscalls
+    and Mach traps, distinguished only by the sign of x16 at the moment
+    of the trap (positive = BSD syscall number, negative = Mach trap
+    number). Confirmed live 2026-08-30: libsystem_kernel.dylib's
+    macx_swapon uses "mov x16, #-0x30 ; svc #0x80" — a Mach trap, not
+    a BSD syscall, at the exact same instruction shape.
+
+    Same gating pattern as _is_objc_msgsend_call_site: confirm the
+    real instruction before trusting any register as syscall content,
+    rather than inferring from register values alone.
+    """
+    try:
+        pc_addr = frame.GetPCAddress()
+        instructions = target.ReadInstructions(pc_addr, 1)
+        if instructions.GetSize() == 0:
+            return False
+        insn = instructions.GetInstructionAtIndex(0)
+        mnemonic = (insn.GetMnemonic(target) or "").lower()
+        if mnemonic != "svc":
+            return False
+        operands = (insn.GetOperands(target) or "").lower()
+        return "0x80" in operands
+    except Exception:
+        return False
+
+
+# Best-effort syscall number -> name tables. Deliberately small and
+# conservative: only numbers that are well-established and stable
+# across iOS/macOS releases are included. An unrecognized number is
+# shown as-is ("syscall #113" / "trap #103") rather than guessed —
+# same "fail safe, not silently wrong" principle as the objc_msgSend
+# call-site fix. Extend against XNU's actual source
+# (bsd/kern/syscalls.master, osfmk/mach/syscall_sw.h) when adding
+# entries, not from memory alone — an incorrect name here is worse
+# than an honest "unrecognized number".
+BSD_SYSCALLS = {
+    1: "exit", 2: "fork", 3: "read", 4: "write", 5: "open", 6: "close",
+    7: "wait4", 9: "link", 10: "unlink", 12: "chdir", 15: "chmod",
+    16: "chown", 20: "getpid", 23: "setuid", 24: "getuid", 26: "ptrace",
+    33: "access", 36: "sync", 37: "kill", 41: "dup", 42: "pipe",
+    43: "getegid", 46: "sigaction", 47: "getgid", 54: "ioctl",
+    57: "symlink", 58: "readlink", 59: "execve", 60: "umask",
+    73: "munmap", 74: "mprotect", 75: "madvise", 90: "dup2", 92: "fcntl",
+    93: "select", 97: "socket", 98: "connect", 104: "bind", 106: "listen",
+    116: "gettimeofday", 117: "getrusage", 188: "stat", 189: "fstat",
+    190: "lstat", 197: "mmap", 202: "sysctl",
+}
+
+MACH_TRAPS = {
+    27: "thread_self_trap", 28: "task_self_trap", 29: "host_self_trap",
+    31: "mach_msg_trap", 33: "semaphore_signal_trap",
+    36: "semaphore_wait_trap", 45: "task_for_pid",
+}
+
+
+def _annotate_syscall(snap, frame, target) -> None:
+    """
+    Passive syscall annotation — decodes the pending BSD syscall or
+    Mach trap whenever stopped directly at a real "svc #0x80"
+    instruction (see _is_syscall_site). Unlike objc annotation, this
+    doesn't require a breakpoint placed on the syscall itself — it
+    recognizes one wherever a stop happens to land on it, including
+    mid single-step sequences.
+
+    x16 at the trap holds the call number: positive for a BSD syscall,
+    negative for a Mach trap (both trap through the identical
+    instruction on AArch64/XNU — see _is_syscall_site). Unrecognized
+    numbers are shown as-is rather than guessed.
+    """
+    try:
+        if not _is_syscall_site(frame, target):
+            return
+
+        x16_reg = frame.FindRegister("x16")
+        if not x16_reg.IsValid():
+            return
+        raw = x16_reg.GetValueAsUnsigned()
+        # Reinterpret as signed 64-bit to recover the sign XNU relies on —
+        # GetValueAsUnsigned() always returns the raw unsigned bit pattern.
+        signed = raw - (1 << 64) if raw >= (1 << 63) else raw
+
+        snap.syscall_number = signed
+        if signed > 0:
+            snap.syscall_kind = "BSD"
+            snap.syscall_name = BSD_SYSCALLS.get(signed, f"syscall #{signed}")
+        elif signed < 0:
+            snap.syscall_kind = "Mach trap"
+            snap.syscall_name = MACH_TRAPS.get(-signed, f"trap #{-signed}")
+        else:
+            snap.syscall_kind = ""
+            snap.syscall_name = "syscall #0"
     except Exception:
         pass  # Annotation is best-effort, never crash MACE

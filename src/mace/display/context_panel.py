@@ -147,5 +147,9 @@ def render_panel(snap: ContextSnapshot,
         receiver = snap.objc_receiver or "?"
         selector = snap.objc_selector or "?"
         parts.append(f"  {Color.CYAN}[{receiver} {selector}]{Color.RESET}")
+    if snap.syscall_name:
+        parts.append(_separator("syscall"))
+        kind_tag = f"  ({snap.syscall_kind})" if snap.syscall_kind else ""
+        parts.append(f"  {Color.CYAN}[{snap.syscall_name}]{Color.RESET}{kind_tag}")
     parts.append(Color.CYAN + "─" * width + Color.RESET)
     return "\n".join(parts)

@@ -50,6 +50,12 @@ class ContextSnapshot:
                                     # populated whenever Swift context is loaded and the
                                     # current frame resolves, independent of objc_msgSend
 
+    # --- Syscall passive annotation ---
+    syscall_name: str = ""         # e.g. "ptrace", "syscall #113" if unrecognized, "" if not
+                                    # stopped at a real svc #0x80 instruction
+    syscall_number: Optional[int] = None  # signed x16 value at the trap (BSD > 0, Mach trap < 0)
+    syscall_kind: str = ""         # "BSD" or "Mach trap" — which XNU convention applies
+
     # --- Derived helpers ---
 
     def w(self, n: int) -> int:

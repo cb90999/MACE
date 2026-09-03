@@ -35,9 +35,11 @@ def _separator(label: str) -> str:
     return f"{Color.CYAN}{label_str}{'─' * max(remaining, 4)}{Color.RESET}"
 
 
-def _format_register_line(name, hex_val, decimal, ascii_val, w_val, highlight=False):
+def _format_register_line(name, hex_val, decimal, ascii_val, w_val, highlight=False, signed_val=None):
     color = Color.YELLOW if highlight else Color.RESET
     line = f"  {color}{name:<6}{Color.RESET}  {hex_val}  # {decimal}u"
+    if signed_val is not None:
+        line += f" ({signed_val}i)"
     if w_val is not None:
         line += f"  w={w_val}"
     if ascii_val:
@@ -56,8 +58,12 @@ def render_registers(snap: ContextSnapshot,
         ascii_v  = snap.as_ascii(j)
         highlight = j in watch
         w_val = snap.w_as_hex(j) if (snap.x[j] >> 32 == 0 and snap.x[j] != 0) else None
-        lines.append(_format_register_line(f"x{j}", hex_val, decimal, ascii_v, w_val, highlight))
-
+        # Only show the signed reinterpretation when the top bit is
+        # actually set (i.e. it would otherwise render as a confusing
+        # ~1.8e19 unsigned number) — scoped to x0-x28 only, never the
+        # always-address fp/lr/sp/pc registers below.
+        signed_val = snap.as_signed(j) if snap.x[j] >= (1 << 63) else None
+        lines.append(_format_register_line(f"x{j}", hex_val, decimal, ascii_v, w_val, highlight, signed_val))
     lines.append("")
     lines.append(f"  {'fp':<6}  0x{snap.fp:016x}  # {snap.fp}u")
     lines.append(f"  {'lr':<6}  0x{snap.lr:016x}  # {snap.lr}u")

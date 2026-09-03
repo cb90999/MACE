@@ -72,6 +72,21 @@ class ContextSnapshot:
         """Return xN as unsigned decimal."""
         return self.x[n]
 
+    def as_signed(self, n: int) -> int:
+        """
+        Return xN reinterpreted as signed 64-bit, using the identical
+        sign convention already proven in _annotate_syscall() (raw -
+        (1 << 64) if the top bit is set). Only meaningful when the top
+        bit is actually set — callers should check snap.x[n] >= (1 
+        63) before displaying this, since a small positive value
+        "reinterpreted as signed" is just itself and not worth a
+        second display. Scoped to x0-x28 only — fp/lr/sp/pc are
+        unambiguously addresses by ABI definition and should never be
+        shown this way.
+        """
+        raw = self.x[n]
+        return raw - (1 << 64) if raw >= (1 << 63) else raw
+
     def as_ascii(self, n: int) -> Optional[str]:
         """
         Return printable ASCII interpretation of xN if all bytes are printable.

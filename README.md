@@ -26,9 +26,21 @@ parked research threads.
 - **Passive Objective-C annotation** — when execution is stopped inside
   app-owned code that just called into `objc_msgSend`, annotates the
   receiver class and selector without requiring a global breakpoint.
-  Caller-filtered to skip system/framework noise. *(In progress —
-  validated on Swift-wrapped framework calls; not yet stress-tested
-  against a target with substantial native Objective-C content.)*
+  Caller-filtered to skip system/framework noise. Validated on
+  Swift-wrapped framework calls and, since 2026-08-30, on substantial
+  native Objective-C content (DVIA-v2's plist write —
+  `[__NSDictionaryM writeToFile:atomically:]`, both receiver and
+  selector resolved correctly from live register state), confirming
+  the call-site detection generalizes beyond the original validation
+  target.
+- **Passive syscall annotation** — when execution is stopped directly
+  at a real `svc #0x80` instruction, decodes the pending BSD syscall or
+  Mach trap from `x16`, correctly handling both conventions (positive
+  = BSD syscall, negative = Mach trap — the same trap instruction
+  serves both on AArch64/XNU). Unrecognized numbers are reported
+  honestly (`syscall #113`, `trap #103`) rather than guessed. No
+  breakpoint on the syscall itself required — recognizes the pattern
+  wherever a stop happens to land on it.
 - **`mace_patch`** — register writes via LLDB's `SBValue` API rather
   than shelling out to the `register write` command text. Guards
   against patching a process that isn't stopped, confirms the write by
@@ -39,6 +51,50 @@ parked research threads.
 - **Breakpoint identification** — every panel surfaces the exact
   breakpoint ID that fired (e.g. `breakpoint 2.1`), matching LLDB's own
   stop-reason output, rather than an undifferentiated "breakpoint".
+- **`mace_grep` / `mace_search`** — filter a broad LLDB command's
+  output down to matching lines (`mace_grep <pattern> <command>`), or
+  search this session's own stop history by address or annotation
+  string (`mace_search <address|string>`). Built specifically for
+  large, hard-to-scroll output (module lists, symbol table dumps) and
+  for re-finding a specific earlier stop without scrolling back
+  through terminal history.
+
+## When to use MACE
+
+MACE fits a specific, narrower role than a general instrumentation
+framework — worth being explicit about both sides of that.
+
+**Good fit:**
+- Assessing anti-debug, anti-tamper, or jailbreak-detection logic where
+  you need real, deterministic register state at a precise moment —
+  not a static guess at what a check does, but what it actually did.
+- Targets where Frida injection is detected, blocked, or simply
+  undesirable — MACE observes and patches through LLDB's own debugger
+  protocol, a different vantage point than in-process injection (see
+  "Why LLDB-native instead of Frida" below).
+- Validating a specific bypass hypothesis with one targeted register
+  write, backed by a real audit trail (`mace_patch` — see above),
+  rather than a broad, unaudited patch.
+- Situations where manually cross-referencing a symbol table or
+  disassembly for every stop is the actual bottleneck — the objc/Swift/
+  syscall annotation above exists specifically to remove that step.
+
+**Not the right tool:**
+- Constructing memory-corruption exploits, sandbox escapes, or kernel
+  privilege-escalation chains. This is a different discipline entirely
+  from what MACE does — see `ROADMAP.md`'s Rationale section. MACE
+  observes and patches an already-cooperative, already-attached
+  process; it does not build the access to get there.
+- Broad static analysis or decompilation — that's Hopper, JEB, or
+  jadx's job. MACE is a live, dynamic tool; pair it with a static
+  analysis pass, don't expect it to replace one.
+- A quick, one-off hook where injection isn't blocked and determinism
+  doesn't matter — Frida is faster and easier for that. MACE's value
+  is specifically when Frida can't be used, or when the audit trail
+  and register-level precision matter more than convenience.
+- Kernel-level or baseband-level analysis — a different layer entirely,
+  with different debugging infrastructure MACE was never scoped to
+  have.
 
 ## Planned (not yet implemented)
 
@@ -47,7 +103,6 @@ parked research threads.
   do I proceed" in natural language. This is the intended v3
   differentiator; the panel above is designed to be genuinely useful on
   its own before this layer lands, not a placeholder for it.
-- **Syscall annotation** (`svc #0x80` + `x16`)
 - **Hardware breakpoint mode** for hardened/anti-debug targets
 - **Android support** — architecture is designed to accommodate a
   parallel Android/JNI context layer alongside the Swift-specific one,

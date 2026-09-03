@@ -1,4 +1,4 @@
-# MACE Backlog
+∑# MACE Backlog
 
 Ideas and future research threads. No version commitment.
 Everything here is parked, not forgotten.
@@ -73,12 +73,13 @@ Target: Panel must be genuinely useful standalone before AI layer lands.
    0x100000000 pointer-vs-small-int threshold, both empirically
    observed on one palera1n iPad/iOS 18.7.2 session rather than derived
    from actual memory region info. Flagged by external repo review
-   (Aug 2026) as a target/device-specific heuristic living in core code
-   -- would need validation against DVIA v2, 8ksec, and other targets
+   (Aug 2026, full review captured in docs/user-feedback.md) as a
+   target/device-specific heuristic living in core code  
+    -- would need validation against DVIA v2, 8ksec, and other targets
    before trusting it generalizes. See docs/target-independence.md for
    the general principle this instance exemplifies. Real fix is this
    GetMemoryRegionInfo() work, not a patch to the numeric range.
-      UPDATE 2026-08-27: DVIA v2 is now a real second target for
+    UPDATE 2026-08-27: DVIA v2 is now a real second target for
    validating the eventual fix (see dvia2_jailbreak_bypass_notes.md) --
    this heuristic was not re-triggered in a new way this session, but
    a related, separate bug WAS found in the same function; see below.

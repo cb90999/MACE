@@ -1,7 +1,8 @@
 # Target Independence
 
 A standing engineering discipline for MACE, not a one-time checklist.
-Captured Aug 2026 following external repo review; keep this doc in
+Captured Aug 2026 following external repo review (full review in
+docs/user-feedback.md, 2026-08-23 entry); keep this doc in
 sync as the definition sharpens.
 
 ## The principle

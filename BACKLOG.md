@@ -30,7 +30,13 @@ Everything here is parked, not forgotten.
 - GitHub repository — public open source release
 
 ## Research References
-- fatalsec renef — SVC direct syscall, libantifrida.so
+- fatalsec renef — SVC direct syscall, libantifrida.so. UPDATE
+  2026-09-04: r2renef/renef confirmed Android-only (not an iOS
+  Frida/MACE-coexistence fix — that question remains open). Still
+  architecturally in-process injection like Frida itself (Lua-
+  scripted, explicitly modeled on r2frida), just a different engine —
+  real Android v2 tooling worth comparing against libantifrida.so, not
+  a workaround for the iOS coexistence problem.
 - xairy pixel-kgdb — Android kernel debugging, PAC backtrace corruption
 - IOCCC 2025 uellenberg — compiler obfuscation techniques
 - Garuda Defender APK — anti-debug detection analysis (Thursday)
@@ -104,6 +110,56 @@ Target: Panel must be genuinely useful standalone before AI layer lands.
    PAC before the iPhone 11 (A13) hardware jailbreak path exists --
    see "usbliter8" thread in chat history, RP2350 purchase planned
    after Sept 20, timeline uncertain. This is available now instead.
+   UPDATE 2026-09-04 (research log, earlier this week): the actual
+   usbliter8 disclosure (Paradigm Shift, June 18 2026, coordinated
+   with Apple Product Security) explicitly names the iPhone 11 (A13)
+   as affected, and -- unlike the A14/M1 pattern documented separately
+   at proteas.github.io (where only early/pre-production silicon was
+   vulnerable, patched before real consumer devices shipped) -- the
+   researchers' own words confirm A12/A13 stayed vulnerable for their
+   FULL production lifetime: "affected A12 and A13 devices will carry
+   it for the remainder of their lifetime." Real, store-bought
+   hardware is not excluded the way it is on A14/M1. Also found a
+   second, more actively developed tool -- Trussh/usbliter8 -- claiming
+   full A12/A13 coverage across iOS 17-27 (would include the actual
+   26.6 build) with dedicated SPTM/TXM patchfinders for iOS 27's CTRR
+   lockdown, plus a claimed "11/11 devices, 100% success rate" (treat
+   with the same caution as any unverified README claim). Worth
+   checking both this tool and Leeksov/usbliter8ra1n's own progress
+   again closer to the actual Sept 20+ purchase date.
+   UPDATE 2026-09-04 (research log, earlier this week): a
+   MobileHackingLab writeup on JOP/PAC surfaced a real, narrow gap in
+   mace_patch's own validation coverage, distinct from the annotation-
+   heuristic question above. Every mace_patch write validated so far
+   (LocalAuthTest, DVIA-v2) has been a plain integer (x0=1, w0=1,
+   x0=0x1f) on a PAC-free A10 device. PAC signs pointer values (return
+   addresses, some function pointers) with a signature tied to the
+   pointer's value and execution context; overwriting a signed pointer
+   with an unsigned/incorrectly-signed one traps at the point of use,
+   not at the write itself.
+   Follow-up research refined this into a real, well-reasoned
+   hypothesis rather than an open unknown: the PAC signing
+   INSTRUCTIONS (pacia, pacda, etc.) are genuinely available at
+   userspace/EL0 -- confirmed directly in the original ARMv8.3 kernel
+   patch series -- and the CPU applies the correct per-process key
+   transparently based on execution context, without ever exposing the
+   raw key value. This is exactly why Frida's own hooking/patching
+   (Interceptor.attach, NativeCallback, Arm64Writer instruction
+   patches) works normally on modern PAC-enabled iPhones: Frida's
+   injected code runs COOPERATIVELY, within the target process's own
+   execution context, so it can legitimately sign new pointer values
+   the same way any normally-compiled PAC-aware program does. mace_patch
+   sits in the SAME cooperative category -- writing through a
+   legitimately-attached debugger to a genuinely stopped process, not
+   forging a value via memory corruption with no legitimate execution
+   context at all (which is what PAC actually defends against, and
+   what neither Frida nor MACE do or need to do). The likely answer,
+   then, is that mace_patch probably CAN correctly write pointer values
+   on PAC-enabled hardware, for the same structural reason Frida's
+   pointer-writing already does -- but this is still a hypothesis, not
+   a confirmed result. Worth testing explicitly once a PAC-enabled
+   validation target exists (see darwin-vm above, or the iPhone 11
+   hardware path) rather than assuming either way.
    UPDATE 2026-08-30: CB flagged a live, concrete motivating example
    for this exact item, reviewing a real raw panel screenshot (DVIA-v2,
    mach_msg2_trap stop) -- x0/x1/x3/x5 all shown as large, meaningless

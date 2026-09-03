@@ -35,6 +35,90 @@
 - libantifrida.so as validation target
 - Flutter/Dart AOT analysis
 
+### v2 Design References (research log, Sep 2026)
+
+**On-device debugging — considered, deliberately ruled out.**
+ad2001/Ajin Deepak's "gdb-inside-device" post (raw GDB+GEF via Termux
+on a rooted AVD) makes a real, credible case that on-device debugging
+is dramatically faster than remote host<->target debugging. Considered
+directly: MACE's architecture doesn't compete on raw connection
+speed -- the actual value sits in the layer built on top of the
+connection (context panel, annotation logic, mace_patch's audit
+trail), not the connection itself. Switching to on-device debugging
+would mean new infrastructure for a benefit that isn't the actual
+bottleneck MACE solves, and the post's own tooling (raw GDB+GEF) is a
+different debugger entirely from MACE's LLDB Python API foundation --
+not a drop-in port. Staying with the remote lldb-server model already
+planned above. One separate, genuinely useful detail from the same
+research thread, unrelated to the architecture question: Vector
+(the actively-maintained LSPosed fork, renamed as of its 2.0 release)
+added a "hide traces introduced by the dex2oat hook" feature -- real,
+current anti-instrumentation-detection engineering worth knowing about
+as background, the same way understanding Frida's own detection
+surface was useful even though MACE never adopted Frida's mechanism.
+
+**LSPosed / Vector — corrected status.** The github.com/lsposed/lsposed
+repo is the original project and is no longer maintained upstream at
+all. The active continuation is a fork by JingMatrix, renamed from
+"LSPosed" to "Vector" as of a 2.0 release (March 2026) -- current
+support now spans Android 8.1 through 17, including Android 16 (the
+version on the already-planned Pixel 10a target above), which the
+original repo never reached before going dark. Architecturally still
+Zygisk-based systemwide injection -- a different mechanism than
+MACE's external-debugger philosophy, not something to adopt directly,
+but real, current, correctly-attributed tooling worth knowing the
+actual name and status of if it comes up again.
+
+**Ken Gannon (Yogehi/MaliciousErection) Android toolkit bundle** —
+real, credentialed researcher (same person behind the Djini/TECNO
+advisory referenced above), three pinned repos forming a coherent
+Android app-security toolkit rather than disconnected finds:
+YayPentestMagiskModuleYay (Magisk module bundling Frida + Movecert
+cert-pinning bypass), a modified drozer-agent fork (the standard tool
+for exported-component/IPC-based Android app testing), and
+cve-2024-4406-xiaomi13pro-exploit-files (Pwn2Own Toronto 2023, DEF CON
+32 talk materials) -- folder names (getapps-apks) strongly suggest an
+app-layer vulnerability in Xiaomi's own pre-installed GetApps store,
+not kernel/browser-layer, though this is inferred from naming rather
+than confirmed by reading the exploit code directly. All genuinely
+relevant once v2 Android work starts; none of it actionable before
+then.
+
+**ad2001/Ajin Deepak — frida-tracing and Frida-Labs.** frida-tracing
+(ad2001.com/blog/frida-tracing) demonstrates `frida-trace -i
+"module!*pattern*"` -- keyword-bruteforce discovery of candidate
+functions in one shot, something MACE genuinely cannot do today (every
+breakpoint this project has set has been placed one at a time, after
+already knowing roughly what to look for from other means). Worth
+naming as a real capability gap for v3's eventual orchestration layer,
+not just an Android note. The same post's raw `Memory.writeByteArray`
+patch (manually-computed opcode, no readback confirmation, no audit
+trail) is useful EXTERNAL validation of mace_patch's own design
+choices (SBValue-based write, automatic readback, full audit trail) --
+a more robust version of the same fundamental idea, not a criticism of
+the blog, which is explicitly educational. Frida-Labs
+(github.com/DERE-ad2001/Frida-Labs, 1.3k stars) is real, popular,
+structured Frida-on-Android teaching curriculum -- best understood as
+a future DVIA-v2/iGoat equivalent for Android (real practice APKs with
+known solutions) once v2 work needs one. Its final challenge,
+"Patching instructions using X86Writer/ARM64Writer," is a second real
+precedent (alongside idamcp's patch_assembly, already logged in v3
+Design References) for mace_patch's eventual "tier 2" evolution --
+real instruction mnemonics, not just raw register values.
+
+**Android Security Exploits YouTube Curriculum**
+(github.com/actuator/Android-Security-Exploits-YouTube-Curriculum,
+735 stars, active -- 2026-dated talks present) -- broad, 14-category
+list; most of it is genuinely out of MACE's scope the same way the
+XNU 1-day repo was (kernel exploits, GPU driver attacks, baseband,
+hardware/glitching -- different layer entirely, would need
+infrastructure MACE was never scoped to have). Four categories are
+real, on-target bookmarks for v2 app-layer work specifically: Android
+Reverse Engineering & Obfuscation (complements the jadx-breaking post
+above), Android Permissions & Privileges, Webviews & JS Interfaces,
+and Input Validation & Path Traversal Attacks. Worth keeping the
+scoped subset, not the whole list.
+
 ## v3 — AI + MCP (NowSecure demo target)
 - MCP server — mace_get_register_context, mace_set_breakpoint,
   mace_read_memory, mace_get_backtrace, mace_step_instruction
@@ -117,6 +201,19 @@ register work — genuinely complementary to MACE, not overlapping). Also
 worth knowing: Mobile Hacking Lab is the same org behind the
 MobileHackingLab validation targets already named in this roadmap —
 relevant landscape awareness, not a dependency.
+
+Related MHL note (2026-09-04, research log): Mobile Hacking Lab also
+publishes a free "ARM64 & LLDB Fundamentals for iOS" course (registers,
+stack frames, AAPCS64, iOS ARM64 internals). Not a MACE-vs-course
+comparison — a course teaches a human the underlying concepts; MACE
+surfaces live, accurate state once someone already knows what they're
+looking at. The more useful framing: MACE's panel is genuinely the
+kind of instrument that could make a course like this land faster for
+a student (learn AAPCS64/stack frames by watching MACE's live panel
+demonstrate it correctly, instead of parsing raw lldb register dumps
+by hand) — worth keeping as a possible positioning angle for the
+NowSecure conversation specifically, given MHL's Djini connection
+above.
 
 **Byte-level perplexity model for packing/obfuscation triage**
 (cocomelonc.github.io, "Malware analysis: part 11", July 2026) — NOT a
@@ -223,6 +320,43 @@ Likely to land well with the actual audience (mobile security
 researchers, largely the demographic most likely to get the
 reference) -- worth keeping as a real framing device for how v3 is
 described externally, not just an internal design note.
+
+**jdb-agentic-debugger** (github.com/brunoborges/jdb-agentic-debugger,
+2026-09-04 research log) -- the strongest v3 reference found to date,
+and a meaningfully different fit than ida-pro-mcp/idamcp above: those
+operate at the STATIC ANALYSIS layer; this operates at exactly MACE's
+own layer -- an AI agent controlling a LIVE debugger (JDWP/jdb for
+Java, not native/LLDB, but the same discipline). The author's own
+stated argument for why a live debugger specifically, not
+snapshot/log tools, is close to a verbatim, independently-arrived-at
+version of MACE's own differentiator: "many bugs require an agent to
+pause the program at a precise moment and interrogate it... that's
+what a debugger does -- and only a debugger." Real, substantial
+project (56 stars, MIT, 52 commits, author writes for Foojay/Substack/
+LinkedIn/DEV/Medium -- a credible, established Java ecosystem figure).
+
+Three concrete design patterns worth citing, none already covered by
+the references above:
+1. Three-tier agent PRIVILEGE separation, not just tool-category
+   separation: jdb-session (the only agent that actually touches the
+   live process -- launch, breakpoints, stepping), jdb-diagnostics
+   (read-only health checks), jdb-analyst (explicitly "read-only, no
+   commands executed" -- pure report synthesis from what the other two
+   already gathered). Sharper than idamcp's Security Dashboard or
+   mrexodia's ext=dbg gating -- those separate tool categories; this
+   separates AGENT ROLES by what they're structurally even allowed to
+   touch, with the report-writer unable to execute anything at all.
+2. File-based reporting for parallel/background agents, with a
+   real stated reason: "avoids the problem of background agents whose
+   text responses cannot be read back, and prevents duplicate work
+   from re-dispatching." Directly relevant if v3 ever needs to run
+   multiple parallel assessment sessions (several challenges, several
+   targets) rather than one linear session.
+3. "Handoff buttons" -- explicit next-step choices presented to the
+   human (Debug interactively / Collect diagnostics / Analyze output)
+   rather than the agent silently choosing a path. A different flavor
+   of human-in-the-loop than approve/deny on one action -- this is the
+   human choosing WHICH KIND of engagement comes next.
 
 ## objc_msgSend Annotation Design
 
@@ -420,6 +554,18 @@ work). Two things worth keeping:
   metadata a stripping pass can't remove without breaking the runtime
   itself that depends on it. Independent, cross-platform confirmation
   the pattern is real, not an iOS-specific hack.
+
+UPDATE 2026-09-04 (research log, ad2001/Ajin Deepak, "The Tale of
+Breaking Android Decompilers"): real, working caveat on this skill's
+whole mechanism, not a new item. A 4-byte AXML manifest corruption
+defeats jadx (older versions) and apktool while Android's own runtime
+AXML parser tolerates it and runs the app normally -- cited as
+actually used by SpyNote, a known Android RAT family. Doesn't
+invalidate the skill (most real apps aren't deliberately corrupted
+this way), but a real, credible failure mode worth knowing before
+trusting a jadx-based pipeline against a genuinely hostile or
+malware-adjacent target -- the tool can silently fail to decompile
+correctly rather than erroring out.
 
 ### JEB + MACE MCP Integration (stretch goal, Nov or post-GA)
 mace_get_jeb_analysis(pc) → decompiled function context at current stop

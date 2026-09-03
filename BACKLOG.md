@@ -565,3 +565,22 @@ a raw decimal; this one is specifically about correctly signed
 NEGATIVE-looking values (x16 here) being shown as if they were huge
 positive numbers when they're not. Both are real, separate
 readability gaps in the same panel, surfaced by the same screenshot.
+
+UPDATE 2026-09-04: Implemented. Added ContextSnapshot.as_signed()
+(same formula as _annotate_syscall()) and wired it into
+_format_register_line()/render_registers(), scoped to x0-x28 only —
+never fp/lr/sp/pc, which are unambiguously addresses by ABI
+definition and should never be shown as signed. Display format:
+append "(-Ni)" after the existing "# {decimal}u" rather than
+replacing it, so every register line still starts the same way and
+the signed hint is purely additive when relevant. 6 mock tests cover
+the exact live case (x16=-47), a second independent negative value
+(not just the one hardcoded example), small-positive and
+address-shaped registers correctly showing no hint, and fp/lr/sp/pc
+correctly never showing one even with the top bit artificially set.
+Committed (267e8b5). Low-risk relative to prior annotation fixes —
+pure post-processing of already-captured register values, no new
+LLDB API surface touched — so treated as done on mock-test confidence
+alone rather than requiring a dedicated live-hardware session, unlike
+the objc/syscall annotation work which genuinely depended on live
+SBFrame/SBTarget behavior that couldn't be fully predicted.

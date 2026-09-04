@@ -17,15 +17,23 @@
 - pyproject.toml — proper package installation
 - Validate trace mode against obfuscated + hardened EEA binary
 
-## v1 — iOS (headline target)
+## v1 — iOS (headline target) — CORE CHECKLIST COMPLETE (2026-09-05)
 - debugserver workflow on palera1n iPad (iOS 18.7.2, A10, PAC-free)
-- MASTG iOS UnCrackable Level 1-3
+  (done ✅ — proven across every session this project)
+- MASTG iOS UnCrackable Level 1-3 (L1 done ✅; L2/L3 intentionally
+  deferred, not a v1 blocker — see Priority 2 section below, "hardened
+  targets" was always scoped as a separate, later goal, not part of
+  this checklist's own completion bar)
 - objc_msgSend interception and annotation (done ✅ — see Priority 1
   section below for full validation history)
 - Syscall annotation (svc #0x80 + x16) (done ✅ — see Priority 1
   section below for full validation history)
-- Hardware breakpoint mode for hardened targets
-- README "When to Use MACE" section
+- Hardware breakpoint mode for hardened targets (done ✅ — mace_hw_break
+  built 2026-09-05, validated live against mach_msg2_trap on real
+  hardware, first attempt — see BACKLOG.md and syscall_annotation_notes.md
+  for the mach_msg2_trap groundwork this reused)
+- README "When to Use MACE" section (done ✅ — 2026-09-04, also
+  corrected two stale entries found in the same pass)
 
 ## v2 — Android
 - lldb-server on Pixel 10a (Android 16, Tensor G4)

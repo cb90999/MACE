@@ -68,7 +68,37 @@ Everything here is parked, not forgotten.
 - xairy pixel-kgdb — Android kernel debugging, PAC backtrace corruption
 - IOCCC 2025 uellenberg — compiler obfuscation techniques
 - Garuda Defender APK — anti-debug detection analysis (Thursday)
-- 8ksec OAAE — ARM exploitation cert, MACE as study environment
+- 8ksec OAAE — ARM exploitation cert, MACE as study environment.
+  UPDATE 2026-09-05: confirmed 8kSec has a dedicated "Offensive iOS
+  Internals" course (academy.8ksec.io), not just general ARM64 —
+  covers SPTM/TXM/PAC/PAN/PPL mitigations, ARM64 internals, lldb-based
+  debugging, dynamic instrumentation, exactly MACE's actual domain.
+  Lead instructor across the whole 8kSec course lineup is Prateek
+  Gianchandani — the same author of DVIA-v2, MACE's single most-used
+  validation target this whole project. Worth treating "Offensive iOS
+  Internals" as the closest-fit course reference, not the more general
+  "Offensive Mobile Reversing and Exploitation" (iOS+Android combined)
+  or "Practical Mobile Application Exploitation" (broader app-security
+  testing, Frida/Burp/MobSF-centric) courses also in the lineup.
+- MobileHackingLab iOS writeups index (lautarovculic.github.io/writeups,
+  research log 2026-09-05) — real, credentialed researcher (active
+  HackerOne/Bugcrowd bounty profiles, not anonymous), dozens of worked
+  MHL iOS challenge writeups in one place (Captain Nohook, Config
+  Editor, Cyclic Scanner, Run Time, Serial/Secure Notes, TokenBleed,
+  Gotham Times, and more). The one writeup actually read (Gotham
+  Times) turned out to be a URL-scheme/network-interception vuln —
+  static triage plus Burp, no live register work at all — a real,
+  useful reminder that not every MHL iOS challenge is a MACE fit.
+  Genuine value of this resource isn't any single writeup, it's using
+  the INDEX to pre-screen for the "ultimate test" MHL target
+  deliberately (genuine anti-debug/jailbreak-detection/native ARM64
+  content) before committing real session time, avoiding a repeat of
+  the iGoat Tampering/Method-Swizzling mistake (two challenge names
+  that turned out to be the literal same file, discovered only after
+  hours of live investigation). Candidate names worth checking first
+  based on title alone, NOT yet confirmed by reading: "Run Time",
+  "Cyclic Scanner" — sound most likely to involve runtime/anti-debug
+  content, but this is a guess from naming, not verified.
 
 - node-applesign (pancake/NowSecure) as preferred re-signing tool for
   entitlement-sensitive targets — use -M (massage-entitlements) to

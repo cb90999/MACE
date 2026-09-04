@@ -37,6 +37,34 @@ Everything here is parked, not forgotten.
   scripted, explicitly modeled on r2frida), just a different engine —
   real Android v2 tooling worth comparing against libantifrida.so, not
   a workaround for the iOS coexistence problem.
+  UPDATE 2026-09-05 (research log, fatalsec YouTube — "Finding hidden
+  function calls using SVC instruction"): real, concrete grounding for
+  why syscall annotation (built and validated 2026-08-30) matters
+  beyond a general capability. The video documents a genuine evasion
+  technique: a binary that issues raw ARM64 SVC instructions directly,
+  bypassing libc wrapper functions (open, read, etc.) entirely, so
+  those symbols never appear in the import table and never get called
+  at all. Their own workflow to find these: radare2 `/A/ SVC` to
+  locate the instructions, read the syscall number from x8 (Linux/
+  Android convention — confirms the same register already targeted in
+  ROADMAP.md's v2 checklist), map it via arm64.syscall.sh.
+  Worth a precise correction to the framing floated in conversation
+  before checking this source: it's not that Frida "can't see" direct
+  syscalls at all — the video's own dynamic-interception step is
+  "develop Frida scripts to hook the SVC instruction," which works
+  fine once you know the address. The real, narrower, more honest
+  MACE advantage: _is_syscall_site() recognizes the svc #0x80/#0
+  pattern automatically at ANY stop (single-stepping, an unrelated
+  breakpoint nearby, incidental exploration) — no separate static
+  pre-analysis pass required first to find where to place a hook, the
+  way this video's whole radare2 workflow exists to do.
+  Two concrete resources for v2's eventual LINUX_SYSCALLS table, worth
+  building against directly rather than from memory (same discipline
+  as the iOS BSD_SYSCALLS/MACH_TRAPS tables): arm64.syscall.sh for
+  Linux syscall number lookups, and radare2's `e asm.os = linux` +
+  `/as` command, which auto-maps syscall numbers to names — a
+  plausible authoritative source worth checking directly when that
+  table gets built.
 - xairy pixel-kgdb — Android kernel debugging, PAC backtrace corruption
 - IOCCC 2025 uellenberg — compiler obfuscation techniques
 - Garuda Defender APK — anti-debug detection analysis (Thursday)

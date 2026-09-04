@@ -432,17 +432,18 @@ class MACEHwBreak:
     does for mace_patch, so this goes through the interpreter rather
     than guess at an uncertain API surface.
 
-    Whether debugserver reliably provides genuine hardware backing on
-    a given target (vs. silently falling back to software if hardware
-    slots are exhausted -- ARM typically has only a handful) is not
-    something this command can fully self-verify: LLDB's Python API
-    does not expose a confirmed, reliable way to distinguish the two
-    after the fact. Rather than assert a confidence this code doesn't
-    have, mace_hw_break surfaces LLDB's own raw creation output
-    directly and records it to the audit trail -- confirm actual
-    firing behavior by testing against a known-repeating target, the
-    same way this capability was validated in the first place (see
-    BACKLOG.md).
+    Verifies genuine hardware backing after creation by checking
+    `breakpoint list`'s own status text for the literal word "hardware"
+    -- confirmed live 2026-09-05 (mach_msg2_trap, DVIA-v2 session) that
+    lldb prints this next to a location that's actually CPU-debug-
+    register backed, distinct from a location that silently fell back
+    to software (e.g. if hardware debug register slots -- ARM typically
+    has only a handful -- were exhausted). Not a Python-API-level
+    guarantee (LLDB's SB API has no direct IsHardware() the way
+    SBValue's register-write API supports mace_patch's readback
+    confirmation), so this is a text-based check on real, observed
+    output, not a documented API contract -- worth re-confirming if a
+    future LLDB/debugserver version changes this wording.
 
     Examples:
       mace_hw_break 0x1e8a84bf0
@@ -489,22 +490,47 @@ class MACEHwBreak:
         bp_id_match = re.search(r"Breakpoint (\d+):", output)
         bp_id = bp_id_match.group(1) if bp_id_match else "?"
 
+        # Verify genuine hardware backing by checking `breakpoint list`'s
+        # own status text — None means verification couldn't be attempted
+        # (e.g. bp_id didn't parse, or the list command itself failed),
+        # distinct from True/False (a real, observed result either way).
+        hardware_confirmed = None
+        if bp_id != "?":
+            list_result = lldb.SBCommandReturnObject()
+            interpreter.HandleCommand(f"breakpoint list {bp_id}", list_result)
+            if list_result.Succeeded():
+                list_output = (list_result.GetOutput() or "")
+                hardware_confirmed = "hardware" in list_output.lower()
+
         record = {
-            "address":    addr,
-            "module":     module or "",
-            "bp_id":      bp_id,
-            "raw_output": output,
-            "timestamp":  time.strftime("%H:%M:%S"),
+            "address":            addr,
+            "module":             module or "",
+            "bp_id":              bp_id,
+            "raw_output":         output,
+            "hardware_confirmed": hardware_confirmed,
+            "timestamp":          time.strftime("%H:%M:%S"),
         }
         _hw_break_history.append(record)
 
         result.AppendMessage(f"[MACE] Hardware breakpoint {bp_id} requested at 0x{addr:x}")
         result.AppendMessage(f"[MACE]   {output}")
-        result.AppendMessage(
-            "[MACE]   note: genuine hardware backing (vs. silent software "
-            "fallback) is not independently confirmable from here — verify "
-            "by testing against a target you know fires reliably."
-        )
+        if hardware_confirmed is True:
+            result.AppendMessage(
+                "[MACE]   confirmed hardware-backed (verified via breakpoint list)."
+            )
+        elif hardware_confirmed is False:
+            result.AppendMessage(
+                "[MACE]   warning: breakpoint list does not show 'hardware' "
+                "for this location — may have silently fallen back to "
+                "software (e.g. hardware debug register slots exhausted). "
+                "Treat as software-backed unless investigated further."
+            )
+        else:
+            result.AppendMessage(
+                "[MACE]   note: could not verify hardware backing "
+                "(breakpoint list check failed) — genuine hardware backing "
+                "is not independently confirmed."
+            )
 
     def get_short_help(self):
         return "Set a hardware breakpoint (CPU debug register, no memory write); records to mace_hw_break_history"
@@ -536,9 +562,16 @@ class MACEHwBreakHistory:
         result.AppendMessage(f"{Color.BOLD}── MACE hardware breakpoint history ──{Color.RESET}")
         for i, rec in enumerate(_hw_break_history, 1):
             mod_str = f"  in {rec['module']}" if rec['module'] else ""
+            hw_confirmed = rec.get('hardware_confirmed')  # older records may predate this field
+            if hw_confirmed is True:
+                hw_str = f"  {Color.GREEN}[hw confirmed]{Color.RESET}"
+            elif hw_confirmed is False:
+                hw_str = f"  {Color.YELLOW}[hw NOT confirmed]{Color.RESET}"
+            else:
+                hw_str = "  [hw unverified]"
             result.AppendMessage(
                 f"  {Color.WHITE}[{i}]{Color.RESET}  {rec['timestamp']}  "
-                f"breakpoint {rec['bp_id']}  at 0x{rec['address']:x}{mod_str}"
+                f"breakpoint {rec['bp_id']}  at 0x{rec['address']:x}{mod_str}{hw_str}"
             )
 
     def get_short_help(self):

@@ -30,7 +30,11 @@
 ## v2 — Android
 - lldb-server on Pixel 10a (Android 16, Tensor G4)
 - MASTG Android targets
-- Syscall annotation (svc #0 + x8)
+- Syscall annotation (svc #0 + x8) (register/instruction convention
+  independently confirmed 2026-09-05 via fatalsec's "Finding hidden
+  function calls using SVC instruction" — see BACKLOG.md's fatalsec
+  renef entry for the full research note and two concrete resources
+  for the eventual LINUX_SYSCALLS table)
 - PAC-aware pointer display
 - libantifrida.so as validation target
 - Flutter/Dart AOT analysis

@@ -23,6 +23,10 @@ _hook_id   = None
 # end via mace_patch_history.
 _patch_history: list[dict] = []
 
+# In-session hardware-breakpoint audit trail, same lifecycle/purpose
+# as _patch_history above.
+_hw_break_history: list[dict] = []
+
 # In-session snapshot history — every ContextSnapshot built while
 # mace_on is active, kept for mace_search. Previously each snapshot
 # was rendered once and discarded; this is what lets mace_search ask
@@ -79,8 +83,9 @@ def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand("command script add -c stop_hook.MACEPatchHistory mace_patch_history")
     debugger.HandleCommand("command script add -c stop_hook.MACEGrep mace_grep")
     debugger.HandleCommand("command script add -c stop_hook.MACESearch mace_search")
+    debugger.HandleCommand("command script add -c stop_hook.MACEHwBreak mace_hw_break")
+    debugger.HandleCommand("command script add -c stop_hook.MACEHwBreakHistory mace_hw_break_history")
     print("[MACE] Loaded. Use 'mace_on' after setting breakpoints to enable.")
-
 
 class MACESwiftLoad:
     """mace_swift_load <path> — load Swift type context from local binary path."""
@@ -404,3 +409,137 @@ class MACESearch:
 
     def get_short_help(self):
         return "Search all recorded stops this session for an address or annotation string"
+
+
+class MACEHwBreak:
+    """
+    mace_hw_break <address> [<module>] — set a hardware breakpoint
+    (CPU debug register, no memory write) at a given address, optionally
+    scoped to a specific module (file-relative offset, resolved the
+    same way as `breakpoint set -a <addr> --shlib <module>` -- lldb
+    handles the ASLR-slide math, MACE doesn't reimplement it).
+
+    Motivating use case: a target that self-checks its own code for
+    tampering (a software breakpoint writes a trap byte into the
+    target's own __TEXT section; a hardware breakpoint writes nothing
+    to memory at all, so a checksum/integrity check over the code
+    can't observe it).
+
+    Built via `breakpoint set ... -H` through the command interpreter
+    (same pattern as mace_grep), not a direct SBBreakpoint Python API
+    call -- LLDB's Python API doesn't expose a clean, well-documented
+    "make this hardware" method the way SBValue's register-write API
+    does for mace_patch, so this goes through the interpreter rather
+    than guess at an uncertain API surface.
+
+    Whether debugserver reliably provides genuine hardware backing on
+    a given target (vs. silently falling back to software if hardware
+    slots are exhausted -- ARM typically has only a handful) is not
+    something this command can fully self-verify: LLDB's Python API
+    does not expose a confirmed, reliable way to distinguish the two
+    after the fact. Rather than assert a confidence this code doesn't
+    have, mace_hw_break surfaces LLDB's own raw creation output
+    directly and records it to the audit trail -- confirm actual
+    firing behavior by testing against a known-repeating target, the
+    same way this capability was validated in the first place (see
+    BACKLOG.md).
+
+    Examples:
+      mace_hw_break 0x1e8a84bf0
+      mace_hw_break 0x100005564 "UnCrackable Level 2"
+    """
+
+    def __init__(self, debugger, internal_dict):
+        pass
+
+    def __call__(self, debugger, command, exe_ctx, result, internal_dict=None):
+        parts = command.strip().split(None, 1)
+        if not parts:
+            result.AppendMessage("[MACE] Usage: mace_hw_break <address> [<module>]")
+            result.AppendMessage("[MACE]   e.g. mace_hw_break 0x1e8a84bf0")
+            result.AppendMessage('[MACE]        mace_hw_break 0x100005564 "UnCrackable Level 2"')
+            return
+
+        addr_str = parts[0]
+        module = parts[1].strip().strip('"').strip("'") if len(parts) > 1 else None
+
+        try:
+            addr = int(addr_str, 0)
+        except ValueError:
+            result.AppendMessage(f"[MACE] Could not parse '{addr_str}' as an address.")
+            return
+
+        inner_command = f"breakpoint set -a 0x{addr:x} -H"
+        if module:
+            inner_command += f' --shlib "{module}"'
+
+        inner_result = lldb.SBCommandReturnObject()
+        interpreter = debugger.GetCommandInterpreter()
+        interpreter.HandleCommand(inner_command, inner_result)
+
+        output = (inner_result.GetOutput() or "").strip()
+        error_output = (inner_result.GetError() or "").strip()
+
+        if not inner_result.Succeeded():
+            result.AppendMessage(f"[MACE] Hardware breakpoint set failed: {error_output or '(no output)'}")
+            return
+
+        # Extract the breakpoint ID lldb assigned, same light text-parse
+        # approach mace_grep already uses on interpreter output.
+        bp_id_match = re.search(r"Breakpoint (\d+):", output)
+        bp_id = bp_id_match.group(1) if bp_id_match else "?"
+
+        record = {
+            "address":    addr,
+            "module":     module or "",
+            "bp_id":      bp_id,
+            "raw_output": output,
+            "timestamp":  time.strftime("%H:%M:%S"),
+        }
+        _hw_break_history.append(record)
+
+        result.AppendMessage(f"[MACE] Hardware breakpoint {bp_id} requested at 0x{addr:x}")
+        result.AppendMessage(f"[MACE]   {output}")
+        result.AppendMessage(
+            "[MACE]   note: genuine hardware backing (vs. silent software "
+            "fallback) is not independently confirmable from here — verify "
+            "by testing against a target you know fires reliably."
+        )
+
+    def get_short_help(self):
+        return "Set a hardware breakpoint (CPU debug register, no memory write); records to mace_hw_break_history"
+
+
+class MACEHwBreakHistory:
+    """
+    mace_hw_break_history — show every mace_hw_break request applied
+    this session, in order. `mace_hw_break_history clear` resets the
+    log.
+    """
+
+    def __init__(self, debugger, internal_dict):
+        pass
+
+    def __call__(self, debugger, command, exe_ctx, result, internal_dict=None):
+        arg = command.strip()
+
+        if arg == "clear":
+            count = len(_hw_break_history)
+            _hw_break_history.clear()
+            result.AppendMessage(f"[MACE] Hardware breakpoint history cleared ({count} entries removed).")
+            return
+
+        if not _hw_break_history:
+            result.AppendMessage("[MACE] No hardware breakpoints requested yet this session.")
+            return
+
+        result.AppendMessage(f"{Color.BOLD}── MACE hardware breakpoint history ──{Color.RESET}")
+        for i, rec in enumerate(_hw_break_history, 1):
+            mod_str = f"  in {rec['module']}" if rec['module'] else ""
+            result.AppendMessage(
+                f"  {Color.WHITE}[{i}]{Color.RESET}  {rec['timestamp']}  "
+                f"breakpoint {rec['bp_id']}  at 0x{rec['address']:x}{mod_str}"
+            )
+
+    def get_short_help(self):
+        return "Show (or clear) the mace_hw_break audit trail for this session"

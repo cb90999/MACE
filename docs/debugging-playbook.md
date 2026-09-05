@@ -214,3 +214,45 @@ the theory — say so plainly and correct the written record, rather
 than letting a plausible-sounding but wrong conclusion stand
 undisturbed. Rule 1's real incident is the clearest example of this
 in practice.
+
+## Rule 10 — never attach to a live system daemon; always detach cleanly before touching the server terminal
+
+**Symptom:** debugging a system-critical process (a network daemon, a
+service manager, anything other processes actively depend on) causes
+visible, real side effects — an "App Not Responding" dialog, a crash,
+degraded device behavior — during or after a debugging session.
+
+**Don't assume:** stopping a debug session cleanly on the client side
+(quitting lldb, Ctrl+C on the server) is sufficient to guarantee the
+target resumes normally. Killing a debugger/tracer abruptly can leave
+the target's threads stopped (job-control state, recoverable with
+`kill -CONT <pid>`) or, worse, in an active ptrace-trace state
+(lowercase `t` in `ps`, more fragile — killing the orphaned tracer
+process is the correct fix here, since a dying tracer triggers an
+automatic kernel-level detach, but the target can still crash rather
+than cleanly resume).
+
+**Do instead:** two separate disciplines, both real:
+1. Always issue `process detach` from the debugger CLIENT before
+   touching the server process at all — detach first, then stop the
+   server, never the reverse order.
+2. Never choose a live system-critical daemon as an iterative
+   debugging target in the first place, especially early in learning
+   a new platform's connection quirks. Use disposable, purpose-built
+   test targets (a dedicated test app, a crackme) where an unclean
+   stop costs nothing beyond relaunching that one process. This isn't
+   a workaround for a MACE limitation — it's the same discipline every
+   iOS target this project used from the start (LocalAuthTest,
+   DVIA-v2, iGoat, UnCrackable — never a real system process).
+
+**Real incident:** the first Android connection session (2026-09-06)
+attached to netd (a live network daemon) to validate multithreaded
+panel rendering. An improper Ctrl+C-based stop left its threads frozen
+long enough to trigger a real "App Not Responding" dialog (recovered
+via kill -CONT). A second incident during the same session left
+threads in the more fragile ptrace-trace state; killing the orphaned
+tracer processes correctly triggered a kernel-level detach, but netd
+crashed rather than resuming — recovered only because Android's init
+automatically relaunched it under a fresh PID within seconds. Real,
+if costly, confirmation that the already-planned "disposable targets
+only" discipline was correct from the start.

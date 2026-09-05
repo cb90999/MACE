@@ -699,3 +699,32 @@ LLDB API surface touched — so treated as done on mock-test confidence
 alone rather than requiring a dedicated live-hardware session, unlike
 the objc/syscall annotation work which genuinely depended on live
 SBFrame/SBTarget behavior that couldn't be fully predicted.
+
+## lldb-server platform mode spawns a dynamic, unforwarded gdbserver child on attach (2026-09-06)
+Source: android_first_connection_notes.md
+
+First-ever Android connection session. Confirmed directly via
+--log-file/--log-channels logging (lldb-server is silent by default in
+BOTH platform and gdbserver modes -- worth always enabling logging
+going forward, not just when troubleshooting):
+
+  < 21> read packet: $qLaunchGDBServer;
+  < 25> send packet: $pid:20438;port:34313;
+
+Platform mode's `process attach` doesn't debug directly over the
+platform connection -- it spawns a brand-new, separate gdbserver child
+process on an unpredictable, dynamically-assigned port for the actual
+debug session. Only the platform port (1234) was ever forwarded via
+adb forward; the real debugging channel MACE's stop-hook/breakpoint
+code depends on was running on a never-forwarded port the entire
+session. This plausibly explains a whole day's worth of "breakpoint
+resolves, some threads show trace, but no panel ever renders"
+mysteries -- not a MACE Python logic bug at all.
+
+Fix direction, not yet implemented: switch from platform mode to
+plain gdbserver mode with a direct --attach=<pid>, the same shape as
+debugserver --attach used successfully every time on iOS this whole
+project -- a fixed, known, single port for the whole session, no
+dynamic child spawning, genuinely scriptable. Confirm exact syntax
+fresh next session (`lldb-server gdbserver --help`) rather than
+assume from today's platform-mode syntax.

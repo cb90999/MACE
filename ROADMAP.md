@@ -52,11 +52,29 @@ second target proving generalization, not overfitting).
 
 - lldb-server on Pixel 10a (Android 16, Tensor G4) — the foundation;
   nothing else below works without this connection existing first,
-  the same role debugserver/palera1n played for v1.
+  the same role debugserver/palera1n played for v1. (partially done —
+  platform connection confirmed live and clean, first try, 2026-09-06:
+  Triple aarch64-unknown-linux-android, OS Version 36, matching
+  getprop's independently-confirmed arm64-v8a/API 36. Real workflow
+  fix still needed before this counts as fully done: platform mode's
+  `process attach` spawns a dynamic, never-forwarded gdbserver child
+  port — see BACKLOG.md. Switch to plain gdbserver + --attach=<pid>
+  next session, the same shape as debugserver --attach on iOS.)
 - One real MASTG Android target (not the whole set) — proves the core
   connection + context-panel loop end to end. The Android equivalent
   of UnCrackable L1 being v1's first real win, not an exhaustive
-  validation pass.
+  validation pass. (Still open — 2026-09-06 attached to netd, a real
+  system daemon, instead. Multithreaded stop-hook/panel rendering
+  validated cleanly against it — genuinely harder than anything iOS
+  presented, 7 threads hitting one address simultaneously, each
+  rendered correctly — but a live system daemon is NOT the right
+  target for iterative debugging: caused a real ANR and a real crash
+  during the session (both recovered cleanly — see
+  android_first_connection_notes.md — but real, avoidable cost).
+  Confirms rather than changes this item's own original framing:
+  use a disposable, purpose-built test target next time — MASTG
+  Android crackmes or Frida-Labs practice APKs, both already logged,
+  never a live system process again.)
 - Syscall annotation (svc #0 + x8) — genuinely low-risk: the pattern-
   recognition logic (_is_syscall_site()-equivalent) is already proven
   on iOS, and real resources are already in hand for the Linux
@@ -65,7 +83,17 @@ second target proving generalization, not overfitting).
   using SVC instruction" — see BACKLOG.md's fatalsec renef entry for
   the full research note and arm64.syscall.sh / radare2's `/as` as
   concrete sources). Good early, confidence-building win, same role
-  objc annotation played early in v1.
+  objc annotation played early in v1. (Built and unit-tested 2026-09-06
+  — real, complete ARM64 table verified against arm64.syscall.sh
+  rather than assumed from memory, 7 mock tests including two
+  explicitly checking mutual exclusivity against the XNU annotator in
+  both directions. Validated against real, live-observed ground truth
+  from netd's own register state (x8=73, ppoll, matching a network
+  daemon's normal event loop) before the code was even written. NOT
+  yet confirmed firing live on real hardware — blocked by the same
+  dynamic-port workflow issue above, not by anything wrong with the
+  annotation logic itself. First real target for live confirmation
+  once the gdbserver/--attach fix lands.)
 - A second validation target (libantifrida.so, or a second MASTG app)
   — proves target-independence rather than overfitting to one app,
   the same discipline that made mace_patch trustworthy (validated on

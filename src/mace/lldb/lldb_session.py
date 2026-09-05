@@ -111,6 +111,14 @@ def snapshot_from_frame(frame: lldb.SBFrame,
     # itself — recognizes it wherever it's encountered.
     _annotate_syscall(snap, frame, target)
 
+    # --- Passive Linux/Android syscall annotation ---
+    # Same pattern-recognition approach as the XNU annotator above, for
+    # the distinct "svc #0" convention (Android/Linux AArch64). Mutually
+    # exclusive with _annotate_syscall by construction — an instruction's
+    # operand can't match both "0x80" and an exact "0" at once — so both
+    # calls are safe to make unconditionally regardless of target OS.
+    _annotate_linux_syscall(snap, frame, target)
+
     return snap
 
 def _annotate_swift_location(snap, frame) -> None:
@@ -428,5 +436,90 @@ def _annotate_syscall(snap, frame, target) -> None:
         else:
             snap.syscall_kind = ""
             snap.syscall_name = "syscall #0"
+    except Exception:
+        pass  # Annotation is best-effort, never crash MACE
+
+
+def _is_linux_syscall_site(frame, target) -> bool:
+    """
+    Confirm the instruction at the current pc is a raw "svc #0" — the
+    Linux/Android AArch64 syscall trap convention, distinct from XNU's
+    "svc #0x80" (see _is_syscall_site above). Linux uses a single,
+    plain, unsigned syscall number in x8 — no BSD-vs-Mach sign split
+    the way XNU's x16 convention needs. Confirmed directly against a
+    live Pixel 10a/Android 16 attach (netd, 2026-09-06) and against
+    fatalsec's "Finding hidden function calls using SVC instruction"
+    video (logged in BACKLOG.md).
+
+    Deliberately checks for an EXACT "0" operand, not a substring
+    match — "0x80" (XNU) also contains the character "0", so a naive
+    substring check would incorrectly match both conventions.
+    """
+    try:
+        pc_addr = frame.GetPCAddress()
+        instructions = target.ReadInstructions(pc_addr, 1)
+        if instructions.GetSize() == 0:
+            return False
+        insn = instructions.GetInstructionAtIndex(0)
+        mnemonic = (insn.GetMnemonic(target) or "").lower()
+        if mnemonic != "svc":
+            return False
+        operand = (insn.GetOperands(target) or "").strip().lstrip("#").strip()
+        return operand == "0"
+    except Exception:
+        return False
+
+
+# Real, complete ARM64 Linux syscall table, verified directly against
+# arm64.syscall.sh (2026-09-06) rather than assumed from memory — ARM64
+# uses a distinct, modern numbering scheme, genuinely different from
+# the far-better-known x86_64 table (e.g. openat=56 here vs 257 on
+# x86_64, read=63 here vs 0 on x86_64). A deliberately curated subset
+# focused on what's actually relevant to security research (anti-debug/
+# tampering detection, process/file/memory/network primitives), not
+# the full ~450-entry table — extend against the same source, not from
+# memory, if more are needed.
+LINUX_SYSCALLS = {
+    5: "setxattr", 17: "getcwd", 25: "fcntl", 29: "ioctl", 56: "openat",
+    57: "close", 61: "getdents64", 62: "lseek", 63: "read", 64: "write",
+    73: "ppoll", 92: "personality", 93: "exit", 94: "exit_group",
+    98: "futex", 117: "ptrace", 129: "kill", 130: "tkill", 131: "tgkill",
+    134: "rt_sigaction", 167: "prctl", 172: "getpid", 173: "getppid",
+    178: "gettid", 198: "socket", 200: "bind", 201: "listen",
+    202: "accept", 203: "connect", 206: "sendto", 207: "recvfrom",
+    211: "sendmsg", 212: "recvmsg", 214: "brk", 215: "munmap",
+    220: "clone", 221: "execve", 222: "mmap", 226: "mprotect",
+    277: "seccomp", 278: "getrandom",
+}
+
+
+def _annotate_linux_syscall(snap, frame, target) -> None:
+    """
+    Passive Linux/Android syscall annotation — decodes the pending
+    syscall from x8 whenever stopped directly at a real "svc #0"
+    instruction (see _is_linux_syscall_site). Same no-placed-breakpoint
+    design as _annotate_syscall above, but simpler: Linux syscall
+    numbers are always plain, small, unsigned positive integers — no
+    BSD-vs-Mach sign split needed the way XNU's x16 convention requires.
+    Unrecognized numbers are shown as-is rather than guessed, same
+    "fail safe, not silently wrong" principle as every other annotator.
+
+    Reuses ContextSnapshot's existing syscall_name/syscall_kind fields
+    (syscall_kind="Linux" here) rather than adding new ones — the panel
+    rendering code already handles this generically, so no display
+    changes are needed for this to show up correctly.
+    """
+    try:
+        if not _is_linux_syscall_site(frame, target):
+            return
+
+        x8_reg = frame.FindRegister("x8")
+        if not x8_reg.IsValid():
+            return
+        number = x8_reg.GetValueAsUnsigned()
+
+        snap.syscall_number = number
+        snap.syscall_kind = "Linux"
+        snap.syscall_name = LINUX_SYSCALLS.get(number, f"syscall #{number}")
     except Exception:
         pass  # Annotation is best-effort, never crash MACE

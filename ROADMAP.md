@@ -36,16 +36,63 @@
   corrected two stale entries found in the same pass)
 
 ## v2 — Android
-- lldb-server on Pixel 10a (Android 16, Tensor G4)
-- MASTG Android targets
-- Syscall annotation (svc #0 + x8) (register/instruction convention
-  independently confirmed 2026-09-05 via fatalsec's "Finding hidden
-  function calls using SVC instruction" — see BACKLOG.md's fatalsec
-  renef entry for the full research note and two concrete resources
-  for the eventual LINUX_SYSCALLS table)
-- PAC-aware pointer display
-- libantifrida.so as validation target
-- Flutter/Dart AOT analysis
+
+Scope for the December NowSecure demo (2026-09-06 scoping session):
+iPad/iOS 18.x and Pixel 10a/Android 16 only — anything iOS 26/27-adjacent
+is explicitly out of scope, and PAC/Flutter work on the Android side is
+deliberately deferred rather than treated as equally urgent by default.
+Same MVP discipline applied to v1: each priority tier should stand on
+its own real value, not need every item bundled in to count as done.
+
+### Priority 1 — load-bearing for the demo
+Build in this order — each step is the foundation the next one needs,
+mirroring how v1 actually got built (debugserver workflow -> one clean
+validation target -> a low-risk high-confidence feature port -> a
+second target proving generalization, not overfitting).
+
+- lldb-server on Pixel 10a (Android 16, Tensor G4) — the foundation;
+  nothing else below works without this connection existing first,
+  the same role debugserver/palera1n played for v1.
+- One real MASTG Android target (not the whole set) — proves the core
+  connection + context-panel loop end to end. The Android equivalent
+  of UnCrackable L1 being v1's first real win, not an exhaustive
+  validation pass.
+- Syscall annotation (svc #0 + x8) — genuinely low-risk: the pattern-
+  recognition logic (_is_syscall_site()-equivalent) is already proven
+  on iOS, and real resources are already in hand for the Linux
+  syscall table (register/instruction convention independently
+  confirmed 2026-09-05 via fatalsec's "Finding hidden function calls
+  using SVC instruction" — see BACKLOG.md's fatalsec renef entry for
+  the full research note and arm64.syscall.sh / radare2's `/as` as
+  concrete sources). Good early, confidence-building win, same role
+  objc annotation played early in v1.
+- A second validation target (libantifrida.so, or a second MASTG app)
+  — proves target-independence rather than overfitting to one app,
+  the same discipline that made mace_patch trustworthy (validated on
+  two unrelated iOS targets, not just one).
+
+### Priority 2 — deliberately deferred, not a Priority 1 blocker
+- PAC-aware pointer display — held pending an empirical check, not
+  assumed either way. Tensor G4's CPU cores (Cortex-X4, Cortex-A720,
+  Cortex-A520) are ARMv9.2-A, and PAC is part of the ARMv9.0-A+
+  baseline architecture, so the SILICON almost certainly supports the
+  instructions — but whether stock Android 16 on Pixel actually
+  compiles/enforces PAC signing in userspace apps the way iOS mandates
+  it across nearly all A12+ code is a separate, unconfirmed software-
+  policy question (Android's PAC adoption has historically been
+  vendor/toolchain-optional, not universally enforced the way Apple's
+  is). Better resolved empirically once lldb-server is actually
+  talking to the device than assumed from research alone — check this
+  directly once Priority 1's foundation is up, then decide whether
+  this feature is even meaningfully in play on this specific device/
+  OS build before investing further design time in it.
+- Flutter/Dart AOT analysis — a genuinely different runtime paradigm
+  (Dart's own AOT compiler, its own object model) beyond even ART's
+  complexity, with zero existing foundation to build on (no Dart/
+  Flutter equivalent of Swift's DerivedData/type-metadata parsing has
+  been designed or discussed at all), and not representative of the
+  typical Android app being assessed anyway. Much bigger lift for a
+  demo that doesn't need it.
 
 ### v2 Design References (research log, Sep 2026)
 

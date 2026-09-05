@@ -765,3 +765,54 @@ already builds, though MACE's own panel is annotation-aware (objc/
 Swift/syscall context) rather than a raw register/disassembly dump,
 a meaningfully different and more purposeful design, not something
 to adopt directly.
+
+UPDATE 2026-09-06 (research log, JetBrains YouTrack article
+SUPPORT-A-4012, "Setup Remote-debugging Android native code with
+RustRover + lldb-server (gdbserver mode) Standalone" -- a real,
+detailed, current guide with an explicit troubleshooting section):
+DECISIVE. This guide states the root cause in plain terms, directly
+confirming the fix direction above rather than just suggesting it:
+
+  "Also occurs if LLDB is started in platform mode
+  (lldb-server platform --listen ...) but uses [a client's] gdbserver
+  mode (process connect) -> protocol mismatch. Always use:
+  lldb-server gdbserver :5039 ... and connect://localhost:5039 on
+  the host."
+
+Three independent sources now agree: our own log evidence
+(dynamic, unforwarded child port under platform mode), s11research's
+writeup (never uses process attach, always launches fresh via
+target create + process launch), and this JetBrains guide (explicit,
+documented protocol mismatch between platform and gdbserver modes).
+No longer a hypothesis -- platform mode is confirmed the wrong choice
+for actual debug sessions; it is fine for the read-only discovery
+things it's designed for (process list, module info), but the real
+debugging connection needs plain gdbserver mode.
+
+Working syntax confirmed directly from this guide (adjust host/port
+for our own setup, verify against `lldb-server gdbserver --help`
+rather than copy blindly):
+
+  adb forward tcp:5039 tcp:5039
+  lldb-server gdbserver :5039 <path-to-binary>
+  (lldb) platform select remote-android
+  (lldb) process connect connect://localhost:5039
+
+Bare port (no `*:` prefix), and the target is a BINARY PATH launched
+directly by lldb-server itself -- not a PID being attached to --
+matching s11research's launch-based approach exactly, not our
+attach-based one. Revised plan for next session: launch a disposable
+target fresh via this exact gdbserver+launch pattern; only fall back
+to investigating --attach=<pid> support specifically if launching a
+fresh process turns out to be impractical for the actual validation
+target chosen.
+
+One real, separate finding from this same guide, likely NOT our
+actual root cause but worth knowing: a documented SELinux/app-sandbox
+failure mode ("Operation not permitted" opening a listening socket)
+specific to running lldb-server via `run-as <package>` (an app's own
+restricted sandbox user). We ran everything as root via Magisk su the
+entire session -- a meaningfully more privileged context than run-as
+ever grants -- so this specific blocker almost certainly doesn't
+apply to us, but worth remembering if a future target ever needs
+`run-as`-scoped debugging instead of root.

@@ -728,3 +728,40 @@ project -- a fixed, known, single port for the whole session, no
 dynamic child spawning, genuinely scriptable. Confirm exact syntax
 fresh next session (`lldb-server gdbserver --help`) rather than
 assume from today's platform-mode syntax.
+
+UPDATE 2026-09-06 (research log, s11research.com/posts/debugging-
+android-with-lldb/, a real RECON conference speaker, credible source):
+independent confirmation our connection setup itself was correct --
+their platform connect output (Triple aarch64-unknown-linux-android,
+OS Version N, Connected: yes) is line-for-line identical in shape to
+what this session got. But their actual workflow suggests a more
+precise hypothesis than "abandon platform mode entirely": they never
+use `process attach` to an already-running PID at all -- they use
+`target create <path>` + `process launch --stop-at-entry -- <args>`,
+launching a FRESH process directly through the platform connection,
+never attaching to something already running. This raises a real,
+untested possibility: the dynamic, unforwarded child-port behavior
+found in the logs may be specifically an ATTACH-mode artifact, not a
+platform-mode-wide one -- a fresh launch may let the platform
+connection create and own the child process from its first
+instruction, without needing the same "find and attach to an
+arbitrary existing PID" handshake that spawned the separate
+gdbserver child on port 34313 during our attach attempt.
+
+Not confirmed either way -- their writeup doesn't show server-side
+logging, so whether `process launch` also spawns a similar dynamic
+port is genuinely unknown, not ruled out. Revised plan for next
+session: try `target create` + `process launch` on a disposable
+target FIRST, with --log-file/--log-channels still enabled so the
+logs can directly confirm or rule out a second dynamic port under
+launch too -- only fall back to switching to plain gdbserver mode
+(the original fix direction above) if the same behavior recurs.
+
+Also worth noting: their right-hand-panel setup (disassembly,
+registers, stack, all live-updating per stop) is via a real, working
+GEF-style lldb overlay called "voltron" (github.com/snare/voltron) --
+genuine, independent prior art for exactly the kind of panel MACE
+already builds, though MACE's own panel is annotation-aware (objc/
+Swift/syscall context) rather than a raw register/disassembly dump,
+a meaningfully different and more purposeful design, not something
+to adopt directly.

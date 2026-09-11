@@ -816,3 +816,72 @@ entire session -- a meaningfully more privileged context than run-as
 ever grants -- so this specific blocker almost certainly doesn't
 apply to us, but worth remembering if a future target ever needs
 `run-as`-scoped debugging instead of root.
+
+UPDATE 2026-09-11 (research log, android_debuggable_patch_notes.md):
+DEFINITIVELY RESOLVED, and worth correcting the written record
+plainly rather than let a wrong theory stand (same Rule 9 discipline
+as the yuvalino case study). Built a real, from-scratch APK decompile/
+patch/rebuild/sign/install pipeline and tested a real app (Frida-Labs
+Challenge 0x1) patched to android:debuggable="true" -- gdbserver
+--attach succeeded cleanly, first try, full 22-thread enumeration,
+with lldb-server itself printing an explicit "Attached to process
+<pid>..." confirmation never seen in any deskclock attempt.
+
+Critically, this ran with SELinux in Enforcing mode throughout (the
+earlier setenforce 0 from the prior session didn't survive the device
+reboot, and was never reapplied) -- and the attach still succeeded.
+That means the SELinux-permissive theory logged in the earlier UPDATE
+above is very likely a RED HERRING, not the real fix -- the ONLY
+variable that actually differed between every failing attempt
+(deskclock, non-debuggable, tried both Enforcing and Permissive) and
+this succeeding one (Frida-Labs 0x1, patched to debuggable, Enforcing
+throughout) was the manifest debuggable flag itself. That flag is
+confirmed as the true, sole gate on gdbserver --attach against real
+app processes -- not SELinux mode, and (per the same session) not
+platform mode vs gdbserver mode either, since the underlying gdbserver
+mechanism itself was proven correct once the real variable (debuggable
+flag) was controlled for.
+
+Real, reusable pipeline built from this, available for every future
+Android target: apktool decode -> sed the manifest -> apktool build
+-> apksigner sign (reusable keystore at
+MobileBinaryTargets/shared/mace-debug.keystore) -> apksigner verify
+-> adb install. Full details, including a bonus finding (MASTG
+UnCrackable L1 Android has its own runtime debuggable-flag self-check
+that self-exits, a real anti-debug challenge worth returning to once
+mace_patch-based Android bypass work begins) in
+android_debuggable_patch_notes.md.
+
+## Shared ART-runtime syscall primitives are a much riskier breakpoint target than the equivalent choice on a native daemon (2026-09-11)
+Source: android_debuggable_patch_notes.md
+
+Real correction to a heuristic that worked well once and then failed
+badly the next time it was applied. "Pick the syscall address with
+the most threads converged on it" was the right call for netd (a
+native daemon) on the first Android session -- froze cleanly, real
+multithreaded panel rendering validated, no ANR. Applying the exact
+same heuristic to an ART-managed app process (Frida-Labs Challenge
+0x1) produced a real ANR almost immediately after continue, even with
+no premature detach involved.
+
+Root cause: the busiest shared syscall site in a managed-runtime
+process is disproportionately likely to be the runtime's OWN internal
+plumbing, not incidental activity. The specific address chosen
+(0x710b768860) was hit by HeapTaskDaemon, FinalizerDaemon,
+ReferenceQueueDaemon, Profile Saver, Jit thread pool, and several
+hwuiTask/mali- threads -- strongly suggesting a core ART
+synchronization primitive (very likely a futex wait) that the
+runtime's own scheduler/GC/JIT machinery depends on continuously.
+Freezing it can stall the whole app's runtime almost immediately,
+unlike freezing the equivalent syscall on a native daemon, where
+background threads pausing briefly was well-tolerated (netd handled
+this fine both times it was tested).
+
+Fix direction for future ART-managed-app sessions: target a
+breakpoint on the APP'S OWN code path specifically (reached via real
+UI interaction -- e.g. tapping a button the app's own MainActivity
+handles), not a shared syscall site with many background daemon
+threads converged on it. The "most threads = most reliable target"
+heuristic should be treated as native-process-specific, not a general
+MACE rule -- worth a note in the debugging playbook distinguishing
+the two cases explicitly.

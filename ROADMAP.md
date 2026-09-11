@@ -63,18 +63,21 @@ second target proving generalization, not overfitting).
 - One real MASTG Android target (not the whole set) — proves the core
   connection + context-panel loop end to end. The Android equivalent
   of UnCrackable L1 being v1's first real win, not an exhaustive
-  validation pass. (Still open — 2026-09-06 attached to netd, a real
-  system daemon, instead. Multithreaded stop-hook/panel rendering
-  validated cleanly against it — genuinely harder than anything iOS
-  presented, 7 threads hitting one address simultaneously, each
-  rendered correctly — but a live system daemon is NOT the right
-  target for iterative debugging: caused a real ANR and a real crash
-  during the session (both recovered cleanly — see
-  android_first_connection_notes.md — but real, avoidable cost).
-  Confirms rather than changes this item's own original framing:
-  use a disposable, purpose-built test target next time — MASTG
-  Android crackmes or Frida-Labs practice APKs, both already logged,
-  never a live system process again.)
+  validation pass. (DONE ✅ — 2026-09-11: Frida-Labs Challenge 0x1,
+  patched to android:debuggable="true" via a real, reusable apktool/
+  apksigner pipeline built from scratch, attached cleanly via
+  gdbserver --attach — full 22-thread enumeration, first try. This
+  definitively resolved a two-session mystery: the manifest
+  debuggable flag, not SELinux mode, was the real gate on attaching
+  to real app processes all along — see BACKLOG.md's lldb-server
+  entry for the full correction. Earlier 2026-09-06 attempt attached
+  to netd, a real system daemon, instead — validated multithreaded
+  panel rendering cleanly but caused a real ANR and crash; confirmed
+  rather than changed the original "disposable target, not a system
+  daemon" framing here. Reusable artifacts from today: a signing
+  keystore, a consistent MobileBinaryTargets/android/crackmes/
+  storage convention, and two crackmes already patched and ready —
+  see android_debuggable_patch_notes.md for full details.)
 - Syscall annotation (svc #0 + x8) — genuinely low-risk: the pattern-
   recognition logic (_is_syscall_site()-equivalent) is already proven
   on iOS, and real resources are already in hand for the Linux
@@ -89,11 +92,16 @@ second target proving generalization, not overfitting).
   explicitly checking mutual exclusivity against the XNU annotator in
   both directions. Validated against real, live-observed ground truth
   from netd's own register state (x8=73, ppoll, matching a network
-  daemon's normal event loop) before the code was even written. NOT
-  yet confirmed firing live on real hardware — blocked by the same
-  dynamic-port workflow issue above, not by anything wrong with the
-  annotation logic itself. First real target for live confirmation
-  once the gdbserver/--attach fix lands.)
+  daemon's normal event loop) before the code was even written. STILL
+  not yet confirmed firing live against a real app process — the
+  connectivity blocker is fully resolved as of 2026-09-11 (gdbserver
+  --attach proven working against a real, patched app process), but
+  the first live attempt chose a bad breakpoint target: a shared
+  ART-runtime synchronization primitive rather than app-specific
+  code, which produced a real ANR before the breakpoint's panel could
+  render — see BACKLOG.md's ART-runtime-primitive entry. Next attempt
+  should target app-specific code reached via real UI interaction,
+  not a syscall site shared by many background daemon threads.)
 - A second validation target (libantifrida.so, or a second MASTG app)
   — proves target-independence rather than overfitting to one app,
   the same discipline that made mace_patch trustworthy (validated on

@@ -266,3 +266,65 @@ crashed rather than resuming — recovered only because Android's init
 automatically relaunched it under a fresh PID within seconds. Real,
 if costly, confirmation that the already-planned "disposable targets
 only" discipline was correct from the start.
+
+## Rule 11 — confirm the process is genuinely stopped before detaching, not just resumed
+
+**Symptom:** issuing `continue` followed immediately by `process
+detach`, with no pause in between to confirm a breakpoint actually
+fired, causes a real ANR or otherwise leaves the target in a bad
+state.
+
+**Don't assume:** detaching from a debugger session is uniformly safe
+regardless of the target's current state. Detaching from a process
+that's genuinely STOPPED (a real panel rendered, `process status`
+shows a real stop reason) is the safe, well-tested case. Detaching
+from a process that's actively RESUMING — possibly right as it's
+hitting a trap instruction — is a meaningfully riskier, less-tested
+situation: the debugger that would normally resolve the trap has just
+left, potentially leaving an unhandled signal mid-flight.
+
+**Do instead:** after `continue`, wait and actually confirm a stop
+happened (the panel rendered, or an explicit `process status` check)
+before issuing `process detach`. Don't chain continue and detach back
+to back on the assumption the breakpoint fired instantly.
+
+**Real incident:** the second Android connection session (2026-09-11)
+chained `continue` then `process detach` immediately, with no panel
+ever appearing in between. The target app went into a real ANR
+immediately afterward — strong evidence the process was still
+actively resuming, not yet stopped, when detach was issued.
+
+## Rule 12 — on ART-managed app processes specifically, avoid breakpoints on shared runtime-synchronization primitives
+
+**Symptom:** a breakpoint chosen because many threads independently
+converge on the same address — a heuristic that worked well on a
+native process — causes an immediate ANR on an ART-managed (Java/
+Kotlin) Android app process, even with no premature detach involved.
+
+**Don't assume:** "most threads converged on this address" is a
+platform-independent proxy for "reliable, low-risk target." On a
+native process (a plain daemon with no managed runtime), a busy
+shared syscall site is usually just incidental, tolerable activity —
+freezing it briefly costs little. On an ART-managed app process, the
+busiest shared syscall sites are disproportionately likely to be the
+runtime's OWN internal synchronization primitives (very likely futex
+waits) that ART's own scheduler, garbage collector, and JIT
+continuously depend on — freezing one can stall the whole app's
+runtime almost immediately, a fundamentally different risk profile.
+
+**Do instead:** on ART-managed app targets specifically, prefer a
+breakpoint on the APP'S OWN code path — reached via real UI
+interaction (e.g. tapping a button the app's own activity handles) —
+over a shared syscall site with many background daemon threads
+converged on it. Treat "most threads = most reliable target" as a
+native-process-specific heuristic, not a general rule.
+
+**Real incident:** the second Android connection session (2026-09-11)
+reused the exact "most threads converged" heuristic that worked
+cleanly for netd (a native daemon) on the first Android session,
+applying it to an ART-managed app process (Frida-Labs Challenge 0x1).
+The chosen address was hit by HeapTaskDaemon, FinalizerDaemon,
+ReferenceQueueDaemon, Profile Saver, Jit thread pool, and several
+hwuiTask/mali- threads — a strong signature of a core ART runtime
+primitive, not incidental activity. The app went into a real ANR
+almost immediately after continue.

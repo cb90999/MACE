@@ -680,3 +680,18 @@ correctly rather than erroring out.
 mace_get_jeb_analysis(pc) → decompiled function context at current stop
 Combines static JEB context with live MACE register state in one agent call.
 Full static-to-dynamic pipeline in single MCP interface.
+
+Real case study worth citing for this item specifically (research log,
+2026-09-08, yuvalino's XNU inode bug writeup — see Rationale section
+above for the full out-of-scope discussion): a credentialed researcher
+got real, live-debugging confirmation that a bug was deterministic and
+not memory corruption, but that alone couldn't explain WHY — cracking
+the actual root cause required manually switching to static kernel-
+source reading, which he only did after real confusion and wasted
+effort trying to blame his own code first. That's exactly the
+escalation this MCP item exists to automate: an agent that can call
+live observation (MACE) AND static analysis (JEB) within one
+investigation, escalating from one to the other on its own, rather
+than a human having to manually realize "I should go read source now"
+after getting stuck. A concrete, vivid illustration for this item,
+worth more than an abstract architecture pitch alone.

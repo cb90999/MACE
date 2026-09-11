@@ -215,6 +215,16 @@ than letting a plausible-sounding but wrong conclusion stand
 undisturbed. Rule 1's real incident is the clearest example of this
 in practice.
 
+A real, independent confirmation this pattern holds outside this
+project too, worth remembering: a credentialed external researcher
+(yuvalino, research log 2026-09-08, see ROADMAP.md's Rationale
+section) hit a deterministic crash, initially assumed his own code
+must be wrong, tried to explain it away with corruption theories —
+and only cracked the real cause once he stopped defending "it must be
+my code" and escalated to reading the actual kernel source. Same
+underlying discipline as this rule: don't let a comfortable
+explanation substitute for checking the layer below it.
+
 ## Rule 10 — never attach to a live system daemon; always detach cleanly before touching the server terminal
 
 **Symptom:** debugging a system-critical process (a network daemon, a

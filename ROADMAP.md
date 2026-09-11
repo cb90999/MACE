@@ -569,6 +569,28 @@ Anti-debug bypass is infrastructure, not MACE capability.
 Demonstrating full MACE features on cooperative targets is more
 compelling for NowSecure demo than fighting bypass infrastructure.
 
+Explicitly out of scope, a distinct axis from the anti-debug-bypass
+point above (that one is about DISCIPLINE — narrow assistance vs.
+exploit construction; this one is about LAYER): live KERNEL debugging.
+Everything MACE has ever done, iOS and Android both, is attaching to
+a userspace PROCESS via debugserver/lldb-server. Debugging the kernel
+itself is a structurally different undertaking (Apple's KDP protocol
+requires a separate physical device debugging another's paused
+kernel) — not a feature gap to close, a different category of tool.
+Concrete example worth remembering (research log, 2026-09-08,
+yuvalino.com/how-can-you-not-be-romantic-about-unix-domain-sockets —
+a real, well-documented 40-year-old XNU logic bug in
+uipc_sense()/unp_ino++ vs ++unp_ino, found live on the DEFCON 34
+stage): MACE-style live register observation could plausibly have
+helped CONFIRM the symptom faster (deterministic, not corruption,
+across repeated fstat() calls) if the bug had lived in reachable
+userspace code — but the actual root-cause discovery was pure static
+kernel-source reading across git history, a different discipline
+already assigned to Hopper/JEB/jadx, not MACE, per README's own
+"when to use MACE" section. This bug sits outside MACE's reach on
+both axes at once: wrong layer (kernel) and wrong discipline (static
+source reading, not dynamic observation).
+
 ## objc_msgSend Annotation — Swift Type Support
 
 Current implementation uses object_getClassName() which works for ObjC receivers.

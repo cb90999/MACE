@@ -328,3 +328,35 @@ ReferenceQueueDaemon, Profile Saver, Jit thread pool, and several
 hwuiTask/mali- threads — a strong signature of a core ART runtime
 primitive, not incidental activity. The app went into a real ANR
 almost immediately after continue.
+
+## Rule 13 — on Android, explicitly configure SIGCHLD not to stop the process, before doing anything else
+
+**Symptom:** continuing past a breakpoint (even one that never
+resolved to a real location) leads to a stop specifically for
+`SIGCHLD`, followed immediately by a real ANR — with no clear
+connection to anything the session was actually trying to do.
+
+**Don't assume:** `lldb`'s default signal-handling behavior is
+appropriate for every target. `SIGCHLD` is a routine, frequent signal
+— sent whenever any child process changes state — and is essentially
+constant background noise in Android's Zygote-based app model.
+Stopping the entire process every time it fires is disruptive and
+serves no debugging purpose on Android, the same reasoning already
+behind iOS's own default `unix-signals` list excluding routine
+signals from causing stops.
+
+**Do instead:** as a standard first step for every Android session,
+not just when troubleshooting:
+
+  (lldb) process handle SIGCHLD -n false -p true -s false
+
+(don't notify, do pass through to the app normally, don't stop on
+it). Worth checking whether other routine signals need the same
+treatment as more Android sessions accumulate.
+
+**Real incident:** the second manifest-patch session (2026-09-12)
+hit a stop specifically labeled "thread 2 received signal: SIGCHLD"
+immediately before a real ANR, while investigating an unrelated
+module-resolution problem. Applying this signal handling did not by
+itself resolve the module-resolution issue, but is a real, independent
+fix worth keeping regardless.

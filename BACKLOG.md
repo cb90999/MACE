@@ -885,3 +885,67 @@ threads converged on it. The "most threads = most reliable target"
 heuristic should be treated as native-process-specific, not a general
 MACE rule -- worth a note in the debugging playbook distinguishing
 the two cases explicitly.
+
+## lldb has never had a populated module list on Android via gdbserver --attach (2026-09-12)
+Source: android_module_resolution_notes.md
+
+Real root cause found for something silently true and visible in
+EVERY Android connection summary this whole project, going back to
+the very first netd attach: "Target 0: (No executable module.)"
+Never investigated directly until today, because every prior
+successful breakpoint used a raw address (-a 0x...), which needs no
+module/symbol resolution at all. Confirmed directly today: `image
+list` returns "error: the target has no associated executable
+images", and a named-symbol breakpoint (`breakpoint set -n strcmp`)
+correctly resolves to nothing ("no locations (pending)") as a direct
+consequence.
+
+Real, meaningful implication: NAMED-symbol breakpoints cannot work on
+Android via the current gdbserver --attach workflow at all, regardless
+of signal handling or target/process ordering -- only raw address
+breakpoints have ever actually worked. A real limitation relative to
+iOS, where debugserver's attach always populates a real module list
+automatically (every iOS Target line this whole project has shown a
+real module name).
+
+Attempted fixes, none fully resolved it: `target create <local pulled
+app_process64>` issued AFTER an existing process connect actively
+DISCONNECTS the session rather than augmenting it (real, concrete
+lesson on its own -- target create and an existing live connection
+don't compose the way one might expect). Reordering to target create
+FIRST, then connecting, left `image list` showing only the single
+app_process64 image at load address 0x0 -- never tied to the live
+process's real, relocated memory layout, and libc.so never appeared.
+`process attach -p <pid>` as a follow-up triggered an ANR before
+anything could be checked further.
+
+Well-reasoned hypothesis for next time, not yet tested: every prior
+WORKING example of named-symbol resolution this whole project has
+found (s11research's blog, JetBrains' RustRover guide) used `target
+create` + `process LAUNCH`, never `process attach` to an already-
+running process. Launching lets lldb observe the process from its
+very first instruction and track the dynamic linker's incremental
+library-load sequence as it happens -- exactly how lldb normally
+discovers modules. Attaching to an already-fully-loaded process gives
+it no mechanism to retroactively backfill that history. This may be
+fundamentally an attach-vs-launch limitation of gdbserver mode on
+Android, not something fixable by ordering/signal tweaks alone --
+worth testing directly against a genuinely launchable target (a
+standalone native binary, or the custom EEA-on-Android idea already
+discussed) before continuing to fight attach-based resolution for a
+Zygote-forked app process specifically.
+
+## Android 16 requires 16KB memory page alignment for native libraries (2026-09-12)
+Source: android_module_resolution_notes.md
+
+Real, current Android 16 compatibility finding, surfaced incidentally
+while installing Frida-Labs Challenge 0x8: a dialog reading "This app
+isn't 16 kb compatible. APK and ELF alignment checks failed" for
+libfrida0x8.so and liblog.so -- both built before this requirement
+existed. Dismissible, did not block the app from running, but a real,
+current thing worth knowing: any older native-code Android app or
+crackme predating this requirement may show the same warning when
+tested against the Pixel 10a / Android 16 target. Not investigated
+further today; worth remembering as a possible source of confusion
+(a dismissible warning, not a real failure) if it shows up again on a
+future target.

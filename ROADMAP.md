@@ -99,9 +99,17 @@ second target proving generalization, not overfitting).
   the first live attempt chose a bad breakpoint target: a shared
   ART-runtime synchronization primitive rather than app-specific
   code, which produced a real ANR before the breakpoint's panel could
-  render — see BACKLOG.md's ART-runtime-primitive entry. Next attempt
-  should target app-specific code reached via real UI interaction,
-  not a syscall site shared by many background daemon threads.)
+  render — see BACKLOG.md's ART-runtime-primitive entry. UPDATE
+  2026-09-12: the real blocker is sharper and deeper than breakpoint
+  choice alone — lldb has never had a populated module list on
+  Android under gdbserver --attach at all (confirmed via `image list`
+  returning no executable images), meaning named-symbol breakpoints
+  on app-specific functions can't resolve regardless of which one is
+  chosen. Raw address breakpoints remain the only proven-working
+  approach. See BACKLOG.md's module-list entry for the full
+  diagnosis and a well-reasoned, not-yet-tested hypothesis (this may
+  be an attach-vs-launch limitation, not fixable by ordering/signal
+  tweaks alone).)
 - A second validation target (libantifrida.so, or a second MASTG app)
   — proves target-independence rather than overfitting to one app,
   the same discipline that made mace_patch trustworthy (validated on

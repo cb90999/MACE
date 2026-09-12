@@ -579,6 +579,61 @@ Targets:
 - Garuda Defender APK analysis
 - Production app assessments
 
+### Target Market
+Never formally written down until now (2026-09-12) despite being
+discussed and agreed on in an earlier session — a real documentation
+gap worth naming plainly, the same "documentation drift" risk the
+original friend review flagged as the biggest risk to this project.
+
+MACE's intended real-world targets: games, banking apps, and
+streaming apps — specifically because these three categories share a
+real, common pattern worth being precise about: they deliberately
+abstract their most sensitive logic into NATIVE code, specifically to
+resist casual static analysis. Streaming apps push DRM (Widevine-
+style content protection) into native modules to keep decryption keys
+and content-protection logic out of easily-decompiled Java/Kotlin
+bytecode. Banking apps push root-detection, SSL-pinning, and anti-
+tampering SDKs into native code for the same reason. Games push anti-
+cheat logic native for the same reason again. Different industries,
+same underlying motive — and exactly the layer MACE's live, native
+ARM64 register/syscall observation is built for, unlike a purely
+static Java/Kotlin decompile.
+
+Real, concrete validation for the games category specifically
+(research log, 2026-09-12, justmobilesec.com/en/blog/android-mobile-
+game-hacking): MACE is NOT a replacement for either tool a real game-
+hacking workflow actually uses — GameGuardian (brute-force memory
+VALUE scanning across huge address ranges, then in-place editing; a
+fundamentally different technique than anything MACE does or should
+do) or IL2CppDumper (STATIC extraction of method offsets from Unity's
+compiled IL2CPP binary, squarely in the Hopper/JEB/jadx category
+already assigned as explicitly not MACE's job). Building memory-
+scanning into MACE would dilute the actual differentiator rather than
+reinforce it, the same reasoning that's kept exploit construction and
+kernel debugging correctly out of scope.
+
+But MACE has a real, natural, complementary role at exactly the point
+that workflow's static half hands off to a dynamic one: once a tool
+like IL2CppDumper produces a real, concrete numeric offset (their own
+example: AddCoins at libil2cpp.so + 0x22400D0), that's precisely the
+input MACE's already-proven address-based breakpoint mechanism
+consumes directly — break there live, observe or mace_patch the
+actual register-level arguments as the function is genuinely called.
+Critically, this workflow needs an ADDRESS-based breakpoint, never a
+NAMED-symbol one — the static tool hands you the raw offset directly,
+so lldb never needs to resolve a symbol by name at all. That means
+the real, still-open module-resolution gap found on 2026-09-12 (see
+BACKLOG.md) does NOT block this real-world use case -- it only
+blocks named-symbol lookups, which this workflow never needed in the
+first place. Genuinely encouraging, concrete evidence that Android's
+current capability gap is narrower than it might otherwise seem for
+this specific target category.
+
+Widevine/Shaka Player interaction specifically (the other half of the
+streaming-app target, DRM rather than games) has been discussed but
+not yet researched with the same rigor -- worth a dedicated pass
+before treating it as equally validated.
+
 ### Rationale
 Frida and MACE cannot coexist on iOS 18.7.2 (proven Aug 1 2026).
 Anti-debug bypass is infrastructure, not MACE capability.

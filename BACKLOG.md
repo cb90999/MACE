@@ -789,6 +789,20 @@ for actual debug sessions; it is fine for the read-only discovery
 things it's designed for (process list, module info), but the real
 debugging connection needs plain gdbserver mode.
 
+SUPERSEDED 2026-09-13 (research prompted by an outside friend review
+of the repo): this specific conclusion was wrong, and the record is
+being corrected rather than erased, per this project's own established
+practice. The real, live-verified fix (see the platform-mode-
+resolution entry further down) is the opposite: lldb-server PLATFORM
+mode, paired with a setting never tried at the time this entry was
+written (`settings set platform.plugin.remote-android.package-name
+<pkg>`, set before connecting), is what actually populates a real,
+Android-aware module model and lets named breakpoints resolve. The
+JetBrains guide's own "protocol mismatch" observation was real for
+ITS specific setup, but doesn't generalize the way this entry assumed
+-- worth remembering that a real, credible external source's own
+finding can still be scoped more narrowly than it reads at first.
+
 Working syntax confirmed directly from this guide (adjust host/port
 for our own setup, verify against `lldb-server gdbserver --help`
 rather than copy blindly):
@@ -934,6 +948,22 @@ worth testing directly against a genuinely launchable target (a
 standalone native binary, or the custom EEA-on-Android idea already
 discussed) before continuing to fight attach-based resolution for a
 Zygote-forked app process specifically.
+
+UPDATE 2026-09-13 (research prompted by an outside friend review):
+this hypothesis was correctly SCOPED (it named gdbserver mode
+specifically, not attach on Android generally) but the underlying
+cause was a real, natural confound, not attach-vs-launch as its own
+dimension. Every attach attempt up to this point happened to be under
+gdbserver mode; every launch success also happened to be under
+gdbserver mode -- attach specifically under PLATFORM mode was never
+tested until the very next session. Once it was: `process attach
+--pid <PID>` after a normal `am start` launch, through the
+remote-android platform plugin with the package-name setting,
+produced a fully populated module model and working named breakpoints
+-- no launch involved at all. The real differentiator was always the
+Android-aware platform connection and module reconstruction, not
+attach versus launch. See the platform-mode-resolution entry further
+down for the full, live-verified result.
 
 ## Android 16 requires 16KB memory page alignment for native libraries (2026-09-12)
 Source: android_module_resolution_notes.md

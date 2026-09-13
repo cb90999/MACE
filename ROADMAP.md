@@ -44,6 +44,22 @@ deliberately deferred rather than treated as equally urgent by default.
 Same MVP discipline applied to v1: each priority tier should stand on
 its own real value, not need every item bundled in to count as done.
 
+**Open, unresolved question as of 2026-09-13, worth flagging plainly
+rather than letting the roadmap imply more confidence than actually
+exists:** after three sessions (2026-09-06, -11, -12, -13) investigating
+named-symbol breakpoint resolution reliability, CB has raised real,
+considered doubt about whether MACE is the right tool for Android at
+all. This is a genuine, high-stakes question, not yet resolved either
+way — deliberately not decided in the immediate aftermath of the
+hardest session this project has had. Worth revisiting with a clear
+head. The specific evidence worth weighing on both sides: MACE's
+actual panel HAS rendered correctly and completely on Android multiple
+times (netd, Frida-Labs Challenge 0x8) via address-based breakpoints —
+a real, already-proven, different capability from the specific named-
+symbol-resolution reliability gap under active investigation. See
+BACKLOG.md's named-symbol-reliability entry for the full, honest
+record of what's proven versus what remains genuinely unresolved.
+
 ### Priority 1 — load-bearing for the demo
 Build in this order — each step is the foundation the next one needs,
 mirroring how v1 actually got built (debugserver workflow -> one clean
@@ -109,7 +125,18 @@ second target proving generalization, not overfitting).
   approach. See BACKLOG.md's module-list entry for the full
   diagnosis and a well-reasoned, not-yet-tested hypothesis (this may
   be an attach-vs-launch limitation, not fixable by ordering/signal
-  tweaks alone).)
+  tweaks alone). UPDATE 2026-09-13: the attach-vs-launch hypothesis is
+  CONFIRMED correct — target create + a genuine launch produced a
+  real, populated module list and a named-symbol breakpoint that
+  resolved completely, with full source-line correlation, on a plain
+  native test binary. This is real, decisive proof the underlying
+  mechanism works. BUT the exact same result could not be reproduced
+  afterward in the same session, across multiple rebuilds and a
+  deliberate delay — a genuine, unresolved reliability gap, not a
+  configuration problem with a known fix. Raw address breakpoints
+  remain the only RELIABLE approach for now; named-symbol resolution
+  is proven possible but not yet dependable. See BACKLOG.md's
+  named-symbol-reliability entry for the full investigation.)
 - A second validation target (libantifrida.so, or a second MASTG app)
   — proves target-independence rather than overfitting to one app,
   the same discipline that made mace_patch trustworthy (validated on

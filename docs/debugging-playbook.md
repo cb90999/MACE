@@ -360,3 +360,37 @@ immediately before a real ANR, while investigating an unrelated
 module-resolution problem. Applying this signal handling did not by
 itself resolve the module-resolution issue, but is a real, independent
 fix worth keeping regardless.
+
+## Rule 14 — repeated attach+continue cycles on a real ART app process carry a real, distinct crash risk, separate from the ANR risk in Rule 12
+
+**Symptom:** continuing past a correctly-set breakpoint doesn't hit
+the intended target — instead, an unrelated background thread crashes
+with a real signal (e.g. SIGSEGV), often a different thread each time,
+sometimes with an identical instruction-level signature across
+attempts.
+
+**Don't assume:** this is the same ANR risk already covered by Rule
+12. Rule 12 is about choosing a bad breakpoint TARGET (a shared
+runtime primitive) that freezes the whole app. This is different: a
+real crash in a thread completely unrelated to the chosen breakpoint,
+that appears to be a side effect of the repeated attach/continue cycle
+itself on a busy, multi-threaded ART process — root cause not
+understood as of this writing.
+
+**Do instead:** treat repeated attach+continue cycles against a real,
+already-running ART app process as carrying real, not-fully-understood
+risk, distinct from and in addition to careful breakpoint-target
+selection. Recover the same way as any other fragile-state incident
+(check `ps -T`, kill the orphaned tracer directly if threads show
+lowercase `t`) — this doesn't require a different recovery procedure,
+just recognition that it's a different failure mode worth documenting
+separately rather than conflating with Rule 12's ANR risk.
+
+**Real incident:** 2026-09-13, testing a correctly-computed address
+breakpoint against a real EEA validation app. Continuing past the
+breakpoint twice, on separate attempts, produced an unrelated SIGSEGV
+in a different background thread each time (SurfaceSyncGroup, then
+AsyncTask #1) — both with the identical instruction signature
+(`ldr x21, [x21]`, fault address 0x0) and an identical trailing
+instruction sequence, strongly suggesting the same underlying cause
+each time, not coincidental unrelated crashes.

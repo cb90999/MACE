@@ -949,3 +949,64 @@ tested against the Pixel 10a / Android 16 target. Not investigated
 further today; worth remembering as a possible source of confusion
 (a dismissible warning, not a real failure) if it shows up again on a
 future target.
+
+## Named-symbol breakpoint resolution CAN work on Android -- but not yet reliably (2026-09-13)
+Source: android_named_symbol_reliability_notes.md
+
+Major update to the module-resolution entry above. Using a plain,
+standalone native binary (the same EEA/Google-CTF-2020 flag-checker
+logic, cross-compiled for Android ARM64 directly) to isolate the
+launch-vs-attach question cleanly, the exact missing combination was
+found: `target create <local-binary>` BEFORE connecting, paired with
+a genuine LAUNCH (not attach). This produced a real, populated module
+list (a real load address, [vdso] visible) and a named-symbol
+breakpoint (`breakpoint set -n validate`) that resolved COMPLETELY,
+with full source-line correlation (`flag_checker.c:53:25`) -- the
+first confirmed instance of this working on Android this entire
+project.
+
+HOWEVER: this exact result could not be reproduced afterward in the
+same session, across multiple rebuilds (dynamic PIE, static-pie, and
+even the identical original -static binary rebuilt fresh) and a
+deliberate 10+ second delay between server launch and connect.
+Theories tested and ruled out: simple race condition (long delay
+didn't help), background app interference (force-stopped EEA
+entirely, no change), device-level degradation (adb devices/echo
+hello both clean and fast, unlike the session that needed a reboot).
+The actual cause of the shift from "worked" to "consistently fails"
+within one otherwise-healthy session remains genuinely unknown.
+
+Real, useful side-finding from the same investigation: the "multiple
+lldb-server PIDs" pattern seen constantly this whole project has a
+clean, non-alarming explanation -- `pgrep -f` matches the full command
+line, and since lldb-server is invoked via `su -c 'lldb-server ...'`,
+the su wrapper's own command line contains the literal string
+"lldb-server" too. Two pgrep matches, one real process, not a genuine
+double-fork.
+
+Status: the core mechanism is proven to work, once. Reliability is
+not solved. Next session should NOT assume this is fixed -- treat
+every attempt as needing fresh verification until a real, reproducible
+trigger for the failure mode is found.
+
+## Repeated attach+continue on a real ART app process can trigger unrelated background-thread crashes (2026-09-13)
+Source: android_named_symbol_reliability_notes.md
+
+Separate, new finding from testing a correctly-computed address
+breakpoint (via /proc/pid/maps + llvm-nm/llvm-readelf, accounting for
+the executable PT_LOAD segment's own file offset) against the real EEA
+app. Continuing past the breakpoint did not hit the intended target --
+instead, twice in a row, on separate attempts, an unrelated SIGSEGV
+crashed a DIFFERENT background thread each time (SurfaceSyncGroup,
+then AsyncTask #1), both with the IDENTICAL instruction signature
+(`ldr x21, [x21]`, fault address 0x0) and an identical trailing
+mov/movk sequence.
+
+This is distinct from Rule 12's ART-runtime-primitive ANR risk (a
+freeze from choosing the wrong breakpoint target) -- this is a genuine
+CRASH, in a thread unrelated to the actual breakpoint address, that
+appears to be a side effect of repeatedly attaching to and continuing
+a real, busy, multi-threaded ART app process. Root cause not
+understood; worth treating as a real, separate risk category for
+Android app-process debugging sessions, alongside the already-known
+ANR risk.

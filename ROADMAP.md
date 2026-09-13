@@ -262,6 +262,44 @@ above), Android Permissions & Privileges, Webviews & JS Interfaces,
 and Input Validation & Path Traversal Attacks. Worth keeping the
 scoped subset, not the whole list.
 
+## v2.5 — Hardened dual-platform validation (2026-09-14)
+
+A deliberately separate phase from v1/v2's crackme validation work,
+sitting between them and v3 -- not a replacement for finishing v2's
+own named-symbol-resolution reliability work (EEA reproduction, then
+Frida-Labs 0x8), but a distinct, later validation of a different
+capability once that's settled.
+
+Real, worth-being-precise-about distinction from everything used in
+v1/v2 so far: EEA and the Google CTF flag-checker are real, but they
+are NOT stripped, NOT obfuscated, and use ordinary libc calls (strlen,
+etc.) -- exactly the kind of target named-symbol resolution needs to
+be a fair test. A genuinely hardened target (stripped, obfuscated,
+syscalls only, no libc wrapper functions visible at all) is a POOR
+test of named-symbol resolution specifically -- there's nothing for
+`breakpoint set -n <name>` to find regardless of whether the platform-
+mode fix works, since the binary has no symbol surface at all. Using
+one to test "does the fix generalize" would just show it doesn't
+apply, for the wrong reason.
+
+But that's exactly what makes a hardened target the right tool for a
+DIFFERENT, arguably more important test: MACE's actual differentiator
+was never "resolve names nicely" -- it's raw register and syscall
+observation on code deliberately resisting easy analysis, much closer
+to a real adversarial target (a hardened banking/DRM/game binary) than
+any crackme used so far. A stripped, syscalls-only binary is close to
+an ideal stress test for the syscall annotation feature specifically,
+on both platforms (iOS's BSD/Mach tables, Android's Linux table),
+since the binary's entire interesting behavior routes through exactly
+the instructions that feature exists to recognize.
+
+Target: a custom combo EEA + Collatz Conjecture CTF, written in
+assembly with a few C helper functions, built with work Claude --
+fully stripped, obfuscated, syscalls only (no puts or other libc
+wrapper calls visible). Not yet wrapped in an APK or IPA; plan is to
+have Cursor build both an iOS and an Android native wrapper around the
+existing binary once v2's reliability work is settled.
+
 ## v3 — AI + MCP (NowSecure demo target)
 - MCP server — mace_get_register_context, mace_set_breakpoint,
   mace_read_memory, mace_get_backtrace, mace_step_instruction

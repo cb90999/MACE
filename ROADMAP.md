@@ -60,6 +60,19 @@ symbol-resolution reliability gap under active investigation. See
 BACKLOG.md's named-symbol-reliability entry for the full, honest
 record of what's proven versus what remains genuinely unresolved.
 
+UPDATE 2026-09-13 (later the same day): new, real evidence worth
+weighing into the above, not a claim that it settles the question. A
+concrete fix for the specific named-symbol reliability gap was found
+and live-verified against the real EEA app the same day — Homebrew
+lldb + lldb-server platform mode + a previously-untried
+package-name setting, rather than gdbserver mode. A named breakpoint
+fired cleanly on the app's real main thread with real argument data
+visible. See BACKLOG.md's platform-mode-resolution update for the
+full verification. Deliberately not yet re-tested for reliability
+across repeated attempts — CB's own framing of this result is "a
+small win," and that's the right level of confidence to carry into
+the broader viability question until it's been exercised more.
+
 ### Priority 1 — load-bearing for the demo
 Build in this order — each step is the foundation the next one needs,
 mirroring how v1 actually got built (debugserver workflow -> one clean

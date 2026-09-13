@@ -989,6 +989,27 @@ not solved. Next session should NOT assume this is fixed -- treat
 every attempt as needing fresh verification until a real, reproducible
 trigger for the failure mode is found.
 
+UPDATE 2026-09-13 (same day, afternoon session): a real, concrete fix
+found and LIVE-VERIFIED against the real EEA app, not just theorized.
+CB brought an independent troubleshooting document describing a
+different working architecture; verified its claims ourselves rather
+than accepting them secondhand. Two previously-uncontrolled variables
+identified: (1) every session this entire project used Apple's
+bundled /usr/bin/lldb, never a separately-installed Homebrew build;
+(2) every attempt against a real app used gdbserver mode, never
+lldb-server PLATFORM mode with the setting
+`settings set platform.plugin.remote-android.package-name <pkg>` set
+BEFORE connecting. Using Homebrew lldb + platform mode + the package-
+name setting + `process attach --pid` after a normal `am start`
+launch, produced a real, rich module list (428+ modules, including
+libeea.so at a real load address) and a named-symbol breakpoint
+(`breakpoint set -n validate -s libeea.so`) that fired cleanly on the
+real app's main thread with real, live argument data visible
+(`input="yuhygg"`). See android_platform_mode_resolution_notes.md for
+the full verification. Not yet re-tested for reliability across
+multiple attempts -- treat as a real, working fix for THIS specific
+problem, not a claim that every open Android question is resolved.
+
 ## Repeated attach+continue on a real ART app process can trigger unrelated background-thread crashes (2026-09-13)
 Source: android_named_symbol_reliability_notes.md
 

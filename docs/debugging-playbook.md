@@ -394,3 +394,18 @@ AsyncTask #1) — both with the identical instruction signature
 (`ldr x21, [x21]`, fault address 0x0) and an identical trailing
 instruction sequence, strongly suggesting the same underlying cause
 each time, not coincidental unrelated crashes.
+
+**UPDATE, same day, later session:** root cause is now understood,
+not just documented as unknown. An independent troubleshooting
+document named this directly and it was confirmed live: ART's JIT
+compiler generates routine SIGSEGVs as part of a normal null-check-
+elimination technique — not real crashes at all, and not specific to
+this project's setup. Fix is the same shape as the SIGCHLD handling
+above:
+
+  (lldb) process handle -s false -n false -p true SIGSEGV
+
+Apply this alongside SIGCHLD handling as standard practice on every
+Android session, not just when troubleshooting. Confirmed: no
+SIGSEGV-related stop occurred after applying this, on a session that
+had shown the crash pattern reliably before.

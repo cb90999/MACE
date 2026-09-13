@@ -409,3 +409,41 @@ Apply this alongside SIGCHLD handling as standard practice on every
 Android session, not just when troubleshooting. Confirmed: no
 SIGSEGV-related stop occurred after applying this, on a session that
 had shown the crash pattern reliably before.
+
+## Rule 15 — when debugging a new platform's connection model, ask who actually performs the attach
+
+Not a symptom/fix pair like the rules above — a standing practice,
+the same shape as Rule 9.
+
+When comparing two platforms' working connection recipes (or
+debugging why one platform's recipe doesn't transfer to another),
+don't just compare the literal command sequences side by side. The
+more useful question is: which side — the on-device server, or the
+debugger client's platform plugin — actually performs the process
+attach. That single distinction explains far more than the commands
+themselves do.
+
+**Real example this project has now confirmed:** on iOS, `debugserver
+--attach=<PID>` does the attaching itself, in its own launch command;
+lldb's `process connect` just joins an already-established session.
+On Android's actual working recipe, `lldb-server platform` mode opens
+a listening/discovery layer only — attach happens as a SEPARATE,
+later step (`process attach --pid <PID>`), performed by lldb's own
+remote-android platform plugin client-side, not by the on-device
+server at all.
+
+**Why this matters, not just as trivia:** the platform that needs the
+richer, client-side attach logic is the one with the more complex
+process model to reconstruct. Android's Zygote-forked, ART-managed,
+JNI-heavy process model needs lldb's own platform plugin actively
+doing that reconstruction work — a bare "connect to whatever's
+already attached" was never going to be enough. iOS's simpler,
+single-Mach-O-binary-per-process model doesn't need that extra layer;
+a plain server-side attach already hands lldb a complete picture.
+
+**Apply this before assuming a working recipe from one platform will
+transfer to another, or before concluding a whole connection mode
+(like `platform` mode) is "wrong" based on one failed attempt** — the
+2026-09-08 to -13 "platform mode is confirmed the wrong choice"
+mistake (see BACKLOG.md's SUPERSEDED entry) happened partly because
+this distinction wasn't asked about early enough.

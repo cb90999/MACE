@@ -1061,3 +1061,44 @@ a real, busy, multi-threaded ART app process. Root cause not
 understood; worth treating as a real, separate risk category for
 Android app-process debugging sessions, alongside the already-known
 ANR risk.
+
+## The real architectural difference between iOS and Android connections: who performs the attach (2026-09-14)
+Source: research conversation, cross-checked against docs/ios-setup.md
+
+CB's own question surfaced this precisely: "one difference between
+iOS and Android is that in Android we connect platform whereas in
+iOS we ran process connect." Checked against the actual iOS
+workflow on file (docs/ios-setup.md) rather than trust either memory
+-- the real distinction is narrower and more interesting than that
+framing suggests. BOTH platforms select a platform first
+(`platform select remote-ios` / `remote-android`). The real
+difference is one step later, and it's about WHO performs the attach,
+not whether platform mode is used at all.
+
+iOS: `debugserver 0.0.0.0:1234 --attach=<PID>` on the device -- the
+server itself does the attaching, in the launch command. lldb's
+`process connect` just joins that already-established session
+directly.
+
+Android's actual working recipe (2026-09-13): `lldb-server platform
+--listen ... --server` opens a listening/discovery layer only -- it
+attaches nothing by itself. `platform connect` joins that layer, then
+a SEPARATE step, `process attach --pid <PID>`, performs the actual
+attach -- done by lldb's own remote-android platform plugin client-
+side, not by the on-device server.
+
+Real, worth-remembering explanation for WHY Android specifically
+needed this recipe: Android's process model (Zygote forking, ART,
+JNI, dozens of shared libraries per process) needs lldb's own richer,
+platform-aware attach logic actively reconstructing a real module
+model. A bare "connect to whatever's already attached" -- all
+`process connect` ever does -- was never going to be enough for that.
+iOS's simpler, single-Mach-O-binary-per-process model doesn't need
+that extra reconstruction layer; a plain server-side attach already
+hands lldb everything it needs directly.
+
+General principle for any future platform work: when debugging a new
+target's connection model, "who actually performs the attach --
+server or client platform plugin" is a more useful first question
+than "which specific commands does the working example use." See
+debugging playbook Rule 15.

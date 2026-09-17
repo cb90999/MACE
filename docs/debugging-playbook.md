@@ -445,5 +445,131 @@ a plain server-side attach already hands lldb a complete picture.
 transfer to another, or before concluding a whole connection mode
 (like `platform` mode) is "wrong" based on one failed attempt** — the
 2026-09-08 to -13 "platform mode is confirmed the wrong choice"
-mistake (see BACKLOG.md's SUPERSEDED entry) happened partly because
+mistake (see BACKLOG.md's SUPERSEDED entry) this distinction wasn't asked about early enoughhappened partly because
 this distinction wasn't asked about early enough.
+
+## Rule 16 — re-read the primary source before reproducing a recipe from memory, don't transcribe it from summary
+
+**Symptom:** a previously-verified recipe fails at a step that the
+original source document actually covered, because the step was
+silently dropped or altered when the recipe was recalled from memory
+or from a summarized account of the original session rather than the
+source document itself.
+
+**Don't assume:** a recipe you've already seen work once is safe to
+reproduce from memory. A summary compresses detail, and a small,
+easy-to-miss detail (a flag, a privilege level, an ordering
+requirement) can be exactly the part that made the original attempt
+work.
+
+**Do instead:** before reproducing a previously-verified multi-step
+recipe, re-read the actual primary source document (not a summary of
+it) and follow it literally, then adapt only if a real, understood
+reason requires a change.
+
+**Real incident:** 2026-09-17's first EEA reproduction attempt started
+`lldb-server platform` without `su -c`, even though
+android_platform_mode_resolution_notes.md's own verified command
+sequence used `adb shell su -c '...'` throughout. The omission wasn't
+a new discovery — it was a transcription error from reconstructing
+the recipe from memory rather than re-reading the notes file first.
+`platform connect` still succeeded (that layer doesn't need root),
+masking the problem until `process attach` failed with "lost
+connection".
+
+## Rule 17 — kill stale `lldb-server` processes before every fresh Android session, not just during incident recovery
+
+**Symptom:** a new `lldb-server platform` session behaves
+inconsistently (unexplained connection drops, attach failures) even
+though the commands themselves match a previously-verified recipe
+exactly.
+
+**Don't assume:** a fresh `adb shell su -c 'lldb-server platform ...'`
+invocation starts from a clean slate. Each failed or abandoned attempt
+can leave its own listener and/or orphaned child process behind on the
+device; these accumulate silently across retries within the same
+session.
+
+**Do instead:** before starting `lldb-server` for a new attempt, always
+check for and clear existing instances:
+
+    adb shell ps -A | grep lldb-server
+    adb shell su -c 'kill -9 <all listed PIDs>'
+    adb shell ps -A | grep lldb-server   # confirm empty
+
+Treat this as routine session-start hygiene, the same standing
+practice as Rule 13/14's signal handling — not something to reach for
+only after something has already gone wrong.
+
+**Real incident:** 2026-09-17 — by the third `lldb-server` restart
+attempt in one session, `ps -A | grep lldb-server` showed four
+resident processes: two live listeners, an orphaned zombie child from
+an earlier failed attach, and one active child from a later attempt.
+A real, credible contributor to that session's connection instability,
+only found by explicitly checking rather than assuming.
+
+## Rule 18 — a breakpoint on a main-thread call site will trigger Android's ANR dialog; this is expected, not a failure
+
+**Symptom:** continuing past a breakpoint set on code that runs
+synchronously on an app's main/UI thread (e.g. a native function
+called directly from a button's click handler via JNI) produces a
+real "isn't responding" ANR dialog on-device.
+
+**Don't assume:** the ANR means the process crashed, hung, or that the
+breakpoint mechanism is broken. Android's watchdog surfaces this
+dialog precisely because the main thread is, correctly, not
+responding — it's genuinely paused at the breakpoint, which is exactly
+what was asked for.
+
+**Do instead:** tap **Wait**, never "Close app" — this keeps the
+process alive. If in doubt whether the thread is merely paused versus
+actually stuck, `process interrupt` followed by `thread list` will
+show a clean, recognizable idle/parked state (or the breakpoint
+address itself) rather than anything resembling corruption. Continue
+normally once inspection is done; the dialog clears on its own once
+the thread responds again.
+
+**Real incident:** 2026-09-17, breakpointing `validate()` in the EEA
+app (called synchronously from `Java_..._checkInput`, itself wired
+directly to the Submit button) produced this ANR dialog on both
+reproduction attempts. `process interrupt` + `thread list` during one
+such dialog showed thread #1 cleanly parked in `__epoll_pwait` (normal
+idle wait) — confirming the process was healthy, not hung — and the
+breakpoint fired correctly on the very next `continue`.
+
+## Rule 19 — a connection dropped without a clean detach can leave every thread job-control-stopped; `kill -CONT` recovers it, same as Rule 10's less-severe case
+
+**Symptom:** the lldb client reports `Process <pid> exited with status
+= -1 (0xffffffff) lost connection`, and the on-device app becomes
+genuinely, repeatedly unresponsive afterward (ANR recurring even after
+tapping Wait), rather than merely showing a stale dialog.
+
+**Don't assume:** the app process itself crashed or needs to be force-
+stopped and relaunched. A debugger connection dying mid-session
+(rather than via a clean `process detach`) can leave every thread
+exactly where it was when the tracer disappeared — genuinely stopped,
+not corrupted.
+
+**Do instead:** check thread state directly before assuming the
+process is lost:
+
+    adb shell ps -T -p <pid>
+
+Uppercase `T` across all threads is Rule 10's less-severe, recoverable
+case:
+
+    adb shell su -c 'kill -CONT <pid>'
+
+(Lowercase `t` is the more fragile ptrace-trace case Rule 10 already
+covers — killing the orphaned tracer process is the fix there
+instead.)
+
+**Real incident:** 2026-09-17, continuing past a new, previously-
+unseen `fork` stop reason dropped the platform-mode connection
+outright. `ps -T` showed all ~40 threads in uppercase `T` state;
+`kill -CONT <pid>` un-froze the app immediately, which then ran
+`validate()` to completion on its own and displayed its normal result
+-- full recovery, no relaunch needed. Root cause of the connection
+drop itself (why resuming past a fork event kills the session) remains
+unexplained -- flagged honestly as a distinct open question from the
+already-documented SIGCHLD/SIGSEGV signal-handling gaps.

@@ -73,6 +73,26 @@ across repeated attempts — CB's own framing of this result is "a
 small win," and that's the right level of confidence to carry into
 the broader viability question until it's been exercised more.
 
+UPDATE 2026-09-17: the "not yet re-tested for reliability" gap is now
+partially closed, and directly bears on the viability question raised
+above. Reproduced the named-symbol fix successfully three times today
+against fresh EEA processes (not the original one-off), and — beyond
+the original scope of today's session — confirmed for the first time
+ever that MACE's own context panel (not just the raw lldb connection)
+fires correctly on Android, live-verified on-screen with a clean
+register panel, correct source-line mapping, and a working status
+bar. This is real, repeated, positive evidence on the "is MACE viable
+on Android" question, not just the narrower named-symbol mechanism.
+Not a claim the question is fully closed: getting to that result
+required working through four newly-discovered operational failure
+modes (root privilege timing, stale-process cleanup, expected ANR
+behavior on main-thread breakpoints, and a fork-stop connection-drop
+recovered via `kill -CONT`) — real friction, honestly documented in
+android_eea_reproduction_2026-09-17_notes.md and debugging playbook
+Rules 16-19, not swept under the earlier "small win" framing. Next
+step per this session's plan: Frida-Labs Challenge 0x8 as a second,
+independent target, applying all of today's fixes from the start.
+
 ### Priority 1 — load-bearing for the demo
 Build in this order — each step is the foundation the next one needs,
 mirroring how v1 actually got built (debugserver workflow -> one clean

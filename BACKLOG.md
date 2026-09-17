@@ -1040,6 +1040,30 @@ the full verification. Not yet re-tested for reliability across
 multiple attempts -- treat as a real, working fix for THIS specific
 problem, not a claim that every open Android question is resolved.
 
+UPDATE 2026-09-17: reliability question partially answered. The core
+mechanism reproduced successfully twice in one session, on freshly
+launched processes, matching the original session's result exactly
+(clean breakpoint hit, full backtrace, full register state). But
+getting there surfaced four new, previously-undocumented operational
+failure modes, all now understood and fixed: (1) `su -c` root is
+required at `process attach` time specifically, not just at
+`platform connect` -- omitting it produces "lost connection" only
+once attach is attempted; (2) stale/orphaned `lldb-server` processes
+from earlier failed attempts destabilize later ones and must be killed
+before each fresh session, not just during incident recovery; (3)
+breakpointing `validate()` reliably triggers Android's ANR dialog,
+since it runs synchronously on the main thread -- this is expected,
+recoverable behavior (tap Wait, confirm via `process interrupt` +
+`thread list` that the thread is merely paused, not hung), not a bug;
+(4) continuing past a `fork` stop (new, previously-unseen stop reason)
+dropped the connection outright, leaving all threads in job-control-
+stopped state, recovered cleanly with `kill -CONT` per Rule 10's
+already-documented procedure. See
+android_eea_reproduction_2026-09-17_notes.md for full detail. Honest
+framing: the named-symbol mechanism itself is now real, repeated
+evidence toward "reliable" -- the session hygiene around it was the
+actual gap, not a flaw in the original fix.
+
 ## Repeated attach+continue on a real ART app process can trigger unrelated background-thread crashes (2026-09-13)
 Source: android_named_symbol_reliability_notes.md
 

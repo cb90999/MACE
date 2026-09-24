@@ -678,3 +678,43 @@ responsible, via the same `volatile`-arithmetic constant-hiding technique
 in `get_prime()`/`get_magic1()`/`get_magic2()`, for the tested LLM's
 `x24=argc` misread -- no static value ever appeared as an immediate to
 anchor to."
+
+## Rule 23 — Full Text
+
+"**Symptom:** a native breakpoint deliberately blocks an app's main thread
+(e.g., inside a JNI-exported function), and you expect Android's ~5-second
+`inputDispatchingTimeout` to eventually surface an ANR dialog. It never
+does -- the UI sits frozen for minutes with no dialog, however long the
+breakpoint is held.
+
+**Don't assume:** the currently-attached debugger session is what's
+suppressing the ANR, or that removing it restores normal behavior.
+Detaching JDWP (`jdb`), clearing `am clear-debug-app`, and even fully
+`lldb detach`-ing (confirmed via `TracerPid: 0` in `/proc/<pid>/status` --
+zero debuggers attached by any means) does not bring ANR back for that
+same process. A plain `kill -STOP <pid>` on the same PID, no debugger
+involved at all, still produces no ANR.
+
+**Do instead:** recognize the exemption is tied to the process instance,
+not to an active debugger connection. Once a PID has been associated with
+a debugger at any point since it spawned, AOSP's `ActivityManagerService` /
+`ProcessErrorStateRecord` marks that process as debug-exempt from ANR for
+the rest of its life, even after every debugger disconnects. To get a real
+ANR baseline, or to test ANR-related behavior at all, `am force-stop` the
+app and relaunch it fresh -- a new PID never touched by `-w`, `jdb`, or any
+attach -- before the ANR mechanism will fire normally again.
+
+**Real incident:** 2026-09-24, Frida-Labs Challenge 0x8
+(`com.ad2001.frida0x8`). A native breakpoint on
+`Java_com_ad2001_frida0x8_MainActivity_cmpstr` was held for 7+ minutes with
+JDWP attached (no ANR), then 1+ minute with JDWP removed but lldb still
+ptrace-attached (no ANR), then 2+ minutes with lldb also detached and the
+process frozen via plain `kill -STOP` with `TracerPid: 0` confirmed (still
+no ANR) -- all against the same PID (13033), which had been JDWP-attached
+once at the very start of the session. Force-stopping and relaunching
+produced a fresh PID (15339) never touched by any debugger; freezing that
+one with the identical `kill -STOP` produced the standard "Frida 0x8 isn't
+responding" ANR dialog within the normal timeout window. Practically
+useful for MACE workflows: attaching once effectively grants a long-lived
+ANR-free debugging window on that process -- but any ANR-timing experiment
+must use a virgin process, not one reused across test iterations."

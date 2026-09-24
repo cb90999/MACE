@@ -573,3 +573,108 @@ outright. `ps -T` showed all ~40 threads in uppercase `T` state;
 drop itself (why resuming past a fork event kills the session) remains
 unexplained -- flagged honestly as a distinct open question from the
 already-documented SIGCHLD/SIGSEGV signal-handling gaps.
+
+## Rule 20 — Full Text
+
+"**Symptom:** a binary's behavior seems to depend on some prior condition
+(instrumentation present, a prior check passed, a mode flag) but nothing
+in the immediately-visible logic explains how that condition is being
+tracked.
+
+**Don't assume:** the condition is checked and acted on in the same place,
+or that you need to trace the check's own logic to find where it's used.
+Look instead for where its result is *stored* -- a register written
+immediately after a call/dispatch returns, then read by a conditional
+branch shortly after, is very likely that stored condition, however
+unrelated the surrounding code looks.
+
+**Do instead:** `reg read` the suspect register right at the branch that
+consumes it. If it's a genuine boolean gate, this confirms it in one
+command, and the register becomes a live-patchable target
+(`mace_patch reg write` to either polarity) rather than something you'd
+need to reverse-engineer analytically.
+
+**Real incident:** 2026-09-24, enigma_v2 CTF (self-authored). `svc #0x15`
+dispatches to `is_frida_active()`, whose return is stored in `x28`, then
+consumed several lines later by `cbz x28, frida_clean` -- if Frida is
+detected, the corruption path silently XORs noise into both accumulators
+each iteration instead of failing outright. `reg read x28` at that `cbz`
+confirms the gate in one step. Generalizes directly from the already-
+proven MACELocalAuthTest bypass (2026-08-21): both are single-boolean-
+register-gates-behavior shapes -- LocalAuth needed force-true to fake
+success, this gate's theoretical bypass is the mirror-image force-false
+(`mace_patch reg write x28 0` right after the svc #0x15 return) had Frida
+actually been detected. Supersedes an earlier, wrong version of this same
+observation from 2026-09-17 research conversation, which assumed the
+mechanism was 'a register zeroed before a gating branch forces bypass' --
+right instinct, wrong specific register and wrong specific mechanism until
+checked against the real source.
+
+## Rule 21 — Full Text
+
+"**Symptom:** a conditional branch leads to a plausible-looking alternate
+code path -- another apparent check, another apparent algorithm variant --
+sitting right next to the real logic, and static/LLM analysis treats it as
+a real candidate.
+
+**Don't assume:** a branch target is reachable just because the
+surrounding code looks like ordinary control flow. Some branches are
+opaque predicates: the condition they test is provably constant by simple
+math (x XOR x, x * 0, n*(n+1) parity), making the branch statically dead,
+but deliberately built to look like a live decision point to mislead a
+reader who doesn't verify the condition's actual value.
+
+**Do instead:** `reg read` the condition register at the branch itself,
+every time, regardless of how confident the arithmetic identity seems from
+reading the disassembly. Confirming a predicate is always-constant this
+way takes one command; proving the same thing by symbolic/SMT reasoning
+(see r2SMT in this backlog) is real work by comparison, and getting it
+wrong sends analysis down a fabricated path.
+
+**Real incident:** 2026-09-24, enigma_v2 CTF. Three separate opaque
+predicates (`tst x9,#0x1` off `mul x9,x9,x21` where x9=char*(char+1),
+always even; `cbnz x9,fake_eea` off `eor x9,x22,x22`, always 0;
+`cbnz x9,fake_check` off `mul x9,x25,xzr`, always 0) each gate a decoy
+branch built to look like a real check. A tested LLM analyzing this
+binary walked directly into `fake_check`'s `cmp x20, #0x7F` as the real
+validation, spending 3+ hours before giving up, entirely because it never
+confirmed the gating register's live value at any of the three branches.
+
+## Rule 22 — Full Text
+
+"**Symptom:** a disassembly shows `svc` instructions with immediate values
+that don't correspond to any real syscall number for the target platform,
+or a syscall-table lookup returns nothing or something implausible for
+them.
+
+**Don't assume:** the annotation feature has a gap, or the immediate is
+simply unrecognized/unusual. Check first whether the binary has installed
+its own `SIGSYS` handler (commonly via `sigaction` inside a
+`__attribute__((constructor))` function, itself worth flagging on sight) --
+if so, every `svc` in that process may be an app-defined dispatch
+mechanism riding on the same trap instruction as a real syscall, not a
+syscall at all.
+
+**Do instead:** locate the SIGSYS handler and read how it decodes the
+triggering instruction (typically extracting the immediate from the raw
+instruction bytes at `pc-4`) and what it dispatches to -- an internal
+function table, not the kernel. Annotate accordingly: label these
+explicitly as custom dispatch, don't force a real-syscall-table name onto
+them.
+
+**Real incident:** 2026-09-24, enigma_v2 CTF. `svc #0x10` through `#0x15`
+are entirely custom -- a constructor-installed SIGSYS handler decodes the
+svc immediate from `*(uint32_t*)(pc-4)`, indexes a local
+`dispatch_table[]`, and calls ordinary C functions (`get_magic1`,
+`get_prime`, `access_granted`, `access_denied`, `get_magic2`,
+`is_frida_active`), writing the return into the saved context's `x0`.
+Direct, concrete instance of the adversarial case the v2.5 rationale
+predicted ('a stripped, syscalls-only binary is close to an ideal stress
+test for the syscall annotation feature') -- this binary is that test
+case. Distinct from the already-logged fatalsec/renef raw-SVC research
+above: that thread is about hiding real syscalls from libc; this is about
+hijacking the trap mechanism for an unrelated purpose entirely. Also
+responsible, via the same `volatile`-arithmetic constant-hiding technique
+in `get_prime()`/`get_magic1()`/`get_magic2()`, for the tested LLM's
+`x24=argc` misread -- no static value ever appeared as an immediate to
+anchor to."

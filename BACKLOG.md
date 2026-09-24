@@ -1,4 +1,4 @@
-∑# MACE Backlog
+# MACE Backlog
 
 Ideas and future research threads. No version commitment.
 Everything here is parked, not forgotten.
@@ -314,6 +314,32 @@ AI annotation makes MACE a different class of tool entirely:
 patch with reg write x8 0 at offset +1320"
 That answer cannot come from panel formatting - only from AI reasoning
 over deterministic register state. That is MACE's unique position.
+
+UPDATE 2026-09-24 (enigma_v2 CTF, self-authored "day in the life"
+presentation piece): a tested LLM with full Ghidra + LLDB access spent
+3+ hours on enigma_v2 and gave up, stating outright: "This is purely
+patience and iterative LLDB observations and intuition and reasoning on
+the part of the player." Worth sharpening what that gap actually was,
+since it's not the gap this section originally assumed. The model had
+full register-state visibility the whole time (ContextSnapshot's whole
+premise) -- it never lacked data. What it lacked was the judgment to know,
+unprompted, that a register written right after a call/dispatch return
+deserves suspicion regardless of how ordinary the surrounding code looks
+(Rule 20), or that a register computed via a provable identity should be
+read live rather than reasoned about symbolically (Rule 21). That's tacit
+RE expertise CB applied without deliberating over it -- exactly the kind
+of judgment a general-purpose model has no structural reason to reliably
+possess on its own.
+
+Reframes this section's own thesis slightly: the v3 AI layer's job isn't
+primarily to grant a model register-state access (already solved) -- it's
+to encode judgment like Rules 20-22 as explicit, checkable heuristics the
+annotation layer applies automatically, so reasoning starts from "this
+register is flagged as a gate/predicate, worth attention" rather than
+needing to independently rediscover that class of suspicion from raw
+disassembly every time. Every playbook rule from Rule 9 onward is, in this
+light, a candidate AI-layer heuristic waiting to be operationalized, not
+just a human-facing reference document.
 
 ## MachOSwiftSection — Swift Type Annotation Solution
 Source: github.com/MxIris-Reverse-Engineering/MachOSwiftSection (284 stars)
@@ -1126,3 +1152,42 @@ target's connection model, "who actually performs the attach --
 server or client platform plugin" is a more useful first question
 than "which specific commands does the working example use." See
 debugging playbook Rule 15.
+
+## enigma_v2 answer key contains a wrong security claim (2026-09-24)
+Source: enigma_v2 CTF answer key (self-authored), independently verified
+
+Section 4's collision-resistance claim ("Probability of collision ≈ 1 in
+10^18... Brute force: infeasible") is wrong, confirmed by two independent
+runs (a separate Claude instance, and a direct from-scratch verification
+against the answer key's own Python solver) that found colliding inputs
+via random search in well under a second, at 14k-64k tries each -- e.g.
+0eg4k3clzvstxztmkymksx8iio14vpnx passes both accumulator checks without
+being the intended flag.
+
+Root cause, more fundamental than accumulator width alone: x20 (col+eea)
+maxes at 124, fits in a byte; x26 is explicitly reduced mod 0xFF -- combined
+check space is at most 2^16 against 36^32 possible inputs, so on average
+every accepted result has roughly 2^149 inputs that produce it. Worse,
+XOR accumulation is order-independent and self-cancelling: any permutation
+of the real flag passes, and any pair of identical characters inserted
+anywhere cancels out -- this is closer to solvable linear algebra over the
+character contributions than a brute-force-resistant search space at all.
+The "v1 Vuln 2: XOR collision → FIXED" line in Section 4 doesn't hold
+either, for the same reason.
+
+Real, useful parallel to Rules 20-22, worth stating plainly: this is the
+same "verify by execution, don't trust a written claim" lesson, just
+applied to the instructor's own answer key instead of an LLM's static
+disassembly reading. Neither CB nor Claude caught this from reading the
+design description -- it only surfaced from actually running the scoring
+function and searching, the same way Rules 20-21's findings only surfaced
+from actually reading a register rather than reasoning about it.
+
+Fix in progress (2026-09-24): reworking the assembly to chain per-character
+state non-linearly by position (e.g. h = rotl(h ^ g(c), i) * K) with
+per-position expected values hidden the same volatile/SVC way, rather than
+order-independent XOR accumulation -- preserves a genuinely unique,
+recoverable flag instead of "any input satisfying two linear equations."
+Considered and rejected: accepting any passing input (gives up on a unique
+flag entirely) and garbage-output-on-collision (papers over the design gap
+rather than fixing it). Not yet implemented or tested.

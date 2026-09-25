@@ -718,3 +718,45 @@ responding" ANR dialog within the normal timeout window. Practically
 useful for MACE workflows: attaching once effectively grants a long-lived
 ANR-free debugging window on that process -- but any ANR-timing experiment
 must use a virgin process, not one reused across test iterations."
+
+## Rule 24 — Full Text
+
+"**Symptom:** the first `process attach` to an Android process on a given
+device/OS build (or after clearing `~/.lldb/module_cache`) either appears
+to hang indefinitely at "Manually indexing DWARF," or crashes lldb outright
+with a segfault whose stack trace runs through
+`AdbClient::SyncService::SendSyncRequest`.
+
+**Don't assume:** `target.preload-symbols false` is a fix, even if setting
+it before a retry appears to resolve the hang. It governs DWARF-indexing
+eagerness, a step that happens after a module file is already fetched --
+it has no effect on the module-fetch path itself, and a retry "working"
+after setting it is very likely just riding on partial cache-warming left
+over from the earlier interrupted attempt, not the setting doing anything.
+
+**Do instead:** disable `target.parallel-module-load` instead. lldb's
+Android platform plugin fetches uncached modules concurrently across a
+thread pool (`DynamicLoaderPOSIXDYLD::LoadAllCurrentModules` dispatched via
+`llvm::StdThreadPool`), and `AdbClient::SyncService`'s single connection
+is not safe for concurrent use from multiple threads -- hitting it
+concurrently races, and depending on scheduling either hangs or segfaults.
+Setting `settings set target.parallel-module-load false` forces sequential
+fetch instead: slower on a cold cache (expect several seconds to a minute
+or more for 100+ modules, correctly, for a real reason this time) but
+reliable. In practice this should be set proactively before any first
+attach to a new device/OS build, not reactively after a hang.
+
+**Real incident:** 2026-09-24/25, Frida-Labs Challenge 0x8
+(`com.ad2001.frida0x8`). First attach (cold cache, default settings)
+appeared to hang at DWARF indexing; a second attempt with
+`preload-symbols false` set completed, and was provisionally credited as
+the fix. The next day, a deliberately cleared cache reproduced a crash
+(not a hang) inside `AdbClient::SyncService::SendSyncRequest` twice in a
+row under default settings, and a third time even with
+`preload-symbols false` set -- fully disproving it. Setting
+`target.parallel-module-load false` on a fourth, equally cold cache
+attempt completed cleanly in ~8 seconds with all 23 threads enumerated,
+no crash. Corrects an unwritten, provisional conclusion from the prior
+session before it became a documented rule -- caught by testing the fix
+in isolation rather than trusting that a retry succeeding meant the
+applied setting was responsible."

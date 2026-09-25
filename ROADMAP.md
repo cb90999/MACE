@@ -93,6 +93,8 @@ Rules 16-19, not swept under the earlier "small win" framing. Next
 step per this session's plan: Frida-Labs Challenge 0x8 as a second,
 independent target, applying all of today's fixes from the start.
 
+UPDATE 2026-09-25: the viability question raised 2026-09-13 can now be answered, specifically for native-code debugging: yes. Over the 2026-09-24/25 sessions, platform-mode attach, named-symbol breakpoints, register reads, and thread introspection were all exercised repeatedly and reliably against a real app's native code (Frida-Labs Challenge 0x8's `cmpstr` JNI export), not just address-based breakpoints on a system daemon. Two previously-unknown reliability blockers were found and fixed in the process, not just worked around: ART's implicit-null-check SIGSEGV/SIGBUS mechanism needed explicit signal-passthrough configuration to avoid every routine null check looking like a crash (debugging playbook), and a genuine lldb bug — `AdbClient::SyncService`'s single ADB connection getting hit concurrently by lldb's parallel module loader on a cold cache, causing a hang or a segfault depending on scheduling — was root-caused and fixed via `target.parallel-module-load false` rather than the initially-assumed `preload-symbols` workaround (debugging playbook Rule 24). Android's ANR-suppression behavior for debugger-touched processes was also characterized precisely (Rule 23), removing a source of session-hygiene confusion. This is real, repeated, positive evidence that the underlying native-code debugging mechanics are sound on Android — not a claim that MACE's differentiating features are proven there yet. Specifically still open, and now the explicit next-session goal: firing `mace_patch` to actually flip a register on-device and change a real Android app's behavior (the Android equivalent of the iOS LocalAuth bypass), and validating syscall annotation live against a real app process rather than only against netd or the Mac-only enigma_v2 CTF binary (which is generalizable RE pattern-recognition material for the debugging playbook, not itself Android validation — see BACKLOG.md). A second validation target beyond Frida-0x8 remains the other open item below, and the two should likely be combined: prove `mace_patch` and/or syscall annotation on Frida-0x8 first, then repeat on a second, independent target to confirm it isn't overfit to one binary.
+
 ### Priority 1 — load-bearing for the demo
 Build in this order — each step is the foundation the next one needs,
 mirroring how v1 actually got built (debugserver workflow -> one clean
@@ -170,10 +172,7 @@ second target proving generalization, not overfitting).
   remain the only RELIABLE approach for now; named-symbol resolution
   is proven possible but not yet dependable. See BACKLOG.md's
   named-symbol-reliability entry for the full investigation.)
-- A second validation target (libantifrida.so, or a second MASTG app)
-  — proves target-independence rather than overfitting to one app,
-  the same discipline that made mace_patch trustworthy (validated on
-  two unrelated iOS targets, not just one).
+- A second validation target (libantifrida.so, or a second MASTG app) — proves target-independence rather than overfitting to one app, the same discipline that made mace_patch trustworthy (validated on two unrelated iOS targets, not just one). UPDATE 2026-09-25: this is now paired with proving MACE's own signature capabilities (mace_patch register flip, live syscall annotation) on Android for the first time — planned as next session's explicit goal, run against Frida-0x8 first, then repeated here for generalization.
 
 ### Priority 2 — deliberately deferred, not a Priority 1 blocker
 - PAC-aware pointer display — held pending an empirical check, not

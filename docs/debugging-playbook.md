@@ -760,3 +760,34 @@ no crash. Corrects an unwritten, provisional conclusion from the prior
 session before it became a documented rule -- caught by testing the fix
 in isolation rather than trusting that a retry succeeding meant the
 applied setting was responsible."
+
+
+## Rule 25 — JDWP `-w` and `wrap.<package>` are both gated by device/app debuggability, not just root access
+
+**Symptom:** setting `am set-debug-app -w <pkg>` or staging a `/data/local/tmp/wrap.<pkg>` sleep script produces no observable delay at all — the app launches and completes its early native/JNI work exactly as fast as an untouched launch, even with root.
+
+**Don't assume:** the mechanism is broken, mistyped, or needs a longer delay/timeout. Root access to push files and set activity-manager debug flags is not the same thing as the target being debuggable — both mechanisms are gated by `ro.debuggable` (device build type) OR the app's own `android:debuggable` manifest flag, and a stock retail ("user") build with a non-debuggable app satisfies neither.
+
+**Do instead:** check `adb shell getprop ro.build.type` and `ro.debuggable` first, before spending time on sleep-duration tuning. If the device is a "user" build and the app isn't already debuggable, patch it: `apktool d` the APK, add `android:debuggable="true"` to the `<application>` tag, `apktool b`, `zipalign -p 4`, `apksigner sign` with the standard `~/.android/debug.keystore`, uninstall the original (signature mismatch) and install the patched one. Confirm with `adb shell run-as <pkg> id` succeeding. Only then does `-w`'s "Waiting For Debugger" dialog (or `wrap.<pkg>`) actually engage — and once it does, `-w` is strictly better: it holds the process indefinitely with zero timing pressure, versus `wrap.<pkg>`'s fixed sleep duration racing against however long attach+breakpoint-setup takes.
+
+**Real incident:** 2026-09-26, `libantifrida.so` (`com.fatalsec.antifrida`). A 10-second, then 25-second `wrap.com.fatalsec.antifrida` sleep script, confirmed correctly staged and executable on-device via `adb shell cat`, produced literally zero delay across two separate relaunch cycles — the three JNI detection functions had already run and rendered their UI before lldb could attach and set breakpoints, in both cases. `getprop ro.build.type` returned `user`, `ro.debuggable` returned `0`. Patching the APK debuggable (apktool + zipalign + apksigner with the debug keystore) and using `am set-debug-app -w` instead produced the expected "Waiting For Debugger" dialog, holding the process indefinitely and allowing all three JNI breakpoints to resolve and hit cleanly with no time pressure at all.
+
+## Rule 26 — an address-based breakpoint set before its containing module is loaded fails outright; it does not auto-pend the way a name-based breakpoint does
+
+**Symptom:** `breakpoint set --address <addr>` targeting an offset inside a not-yet-loaded shared library returns `warning: failed to set breakpoint site ... error: 9 sending the breakpoint request` instead of the `no locations (pending)` message a name-based breakpoint on the same not-yet-loaded library produces.
+
+**Don't assume:** the breakpoint is quietly pending the way name-based breakpoints are, and will resolve automatically once the module loads. It won't — lldb attempted (and failed) to write a trap instruction at a literal memory address that doesn't exist yet, and there's no symbol to watch for later resolution.
+
+**Do instead:** for an offset inside a function that isn't loaded yet, set a name-based breakpoint on the function first (which does correctly pend and resolve on module load), let it stop at the function's entry, then set the address-based breakpoint for the specific offset from inside that stop — by then the module is loaded and the address is valid. Computing the target offset ahead of time via static disassembly of the file is fine; just don't try to arm it before the containing module exists in the process's address space.
+
+**Real incident:** 2026-09-26, `libantifrida.so`. `breakpoint set --address 0x7b13a7cd00` (a known offset inside `detectFridaThree`, computed from prior static disassembly) failed immediately with the site-request error when set before the app had progressed past its JDWP wait-for-debugger gate. Deleting it, setting `breakpoint set --name Java_com_fatalsec_antifrida_MainActivity_detectFridaThree` instead (which pended correctly), releasing the debugger wait, and then setting the address breakpoint only after stopping at the function's entry worked cleanly both times this was tried.
+
+## Rule 27 — `mace_on`'s stop-hook panel is not yet fully thread-scoped; expect an occasional spurious or missing panel on multi-thread stops
+
+**Symptom:** after `mace_on` is enabled, a single `continue` sometimes prints two separate `── MACE` panels for one stop event — one for the thread that actually hit a real breakpoint, and a second for an unrelated thread showing an invalid breakpoint id (`18446744073709551615.1`, i.e. -1 as unsigned) with register content unrelated to any of the set breakpoints. Separately, a real breakpoint hit has also been observed to produce no panel output at all.
+
+**Don't assume:** this reflects an actual second breakpoint hit, a race condition corrupting register state, or a bug in the syscall-annotation logic specifically. It's isolated to the panel-printing stop-hook.
+
+**Do instead:** treat `process status` / `thread list` / `register read` as the source of truth when a panel looks suspicious or is missing — they were confirmed accurate in every case this was checked against. File this as a known, non-blocking cosmetic bug in the stop-hook's per-thread iteration, not something to debug mid-session.
+
+**Real incident:** 2026-09-26, `libantifrida.so`, breakpoint 7.1 (a `read` syscall site hit twice in a loop). The second hit's `continue` output showed a correct MACE panel for Thread 1 (the real hit, decoding `[read]` correctly) immediately followed by a second, spurious panel labeled "-- Thread 5" with breakpoint id -1 and unrelated register values (a Jit thread pool thread that was simply also stopped, not at any set breakpoint). Separately, the very next real hit (breakpoint 8.1, a `close` syscall) produced no MACE panel at all in the returned output, confirmed instead via a direct `register read x8 x0`.

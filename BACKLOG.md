@@ -8,7 +8,7 @@ Everything here is parked, not forgotten.
 - PLT/GOT region annotation in context panel
 - Inline hook detection — entry point integrity check
 - Heap pointer dereference — follow xN into heap memory
-- SVC hidden function call detection (fatalsec/renef pattern)
+- SVC hidden function call detection (fatalsec/renef pattern) — validated live 2026-09-26 against libantifrida.so's detectFridaThree (see Research References below)
 - Obfuscation CTF binary — IOCCC-style compiler obfuscation target
 
 ## Platform
@@ -65,6 +65,40 @@ Everything here is parked, not forgotten.
   `/as` command, which auto-maps syscall numbers to names — a
   plausible authoritative source worth checking directly when that
   table gets built.
+- UPDATE 2026-09-26 (live validation, libantifrida.so): confirmed live
+  against a second, real target — `detectFridaThree()` in fatalSec's
+  `adv_frida.apk` inlines exactly the pattern this research predicted:
+  `openat` (`w8=0x38`), `read` (`w8=0x3f`), and `close` (`w8=0x39`) all
+  issued via raw `svc #0` with the syscall number hand-loaded into `w8`,
+  zero libc wrapper symbols nearby. MACE's context panel correctly
+  decoded all three (`[openat]`, `[read]` x2, `close` confirmed via
+  direct register read when the panel didn't fire — see the mace_on
+  stop-hook note in debugging playbook Rule 27). Separately learned:
+  `detectFridaThree()` returns a raw `int`, not a boolean (`()I` in the
+  smali, not `()Z`), and its value is non-deterministic across runs
+  (`382`, then `116` with no code change) — almost certainly a byte-sum
+  accumulated while scanning matched `/proc/self/maps` entries, not a
+  simple detected/not-detected flag. The app's on-screen checkmark for
+  this check was identical (green) whether given the real unpatched
+  value or a `mace_patch`-forced `0`, meaning the checkmark doesn't
+  visibly react to this return value at all (its actual result likely
+  only surfaces via a `System.out.println` visible in the obfuscated
+  smali dispatcher, not the UI) — so `mace_patch` was confirmed
+  mechanically correct (lldb's own register read-back proved the write
+  took) but no visible bypass could be demonstrated on this target the
+  way Frida-0x8's `cmpstr` demo produced one. Getting lldb attached
+  before these JNI functions ran at all required patching the APK
+  debuggable (`android:debuggable="true"` via apktool decode/rebuild,
+  then `zipalign` + `apksigner` with the standard debug keystore) — the
+  device is a stock `ro.build.type=user` build, which silently no-ops
+  both the `wrap.<package>` Zygote-delay mechanism and JDWP's
+  `am set-debug-app -w` regardless of sleep duration or root access.
+  See debugging playbook Rules 25-27 for the full incident writeups.
+  Also noted, not yet worth its own rule: lldb here lacks LZMA support
+  for reading system libraries' `.gnu_debugdata` section (a constant
+  warning on every attach) — cosmetic only, degrades some internal
+  libc symbol names to `___lldb_unnamed_symbol_*` but never blocked a
+  breakpoint, syscall decode, or register operation this session.
 - xairy pixel-kgdb — Android kernel debugging, PAC backtrace corruption
 - IOCCC 2025 uellenberg — compiler obfuscation techniques
 - Garuda Defender APK — anti-debug detection analysis (Thursday)

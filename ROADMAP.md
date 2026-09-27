@@ -59,6 +59,9 @@ a real, already-proven, different capability from the specific named-
 symbol-resolution reliability gap under active investigation. See
 BACKLOG.md's named-symbol-reliability entry for the full, honest
 record of what's proven versus what remains genuinely unresolved.
+RESOLVED — see the 2026-09-25 update further below in this section:
+the viability question is answered, specifically for native-code
+debugging, yes.
 
 UPDATE 2026-09-13 (later the same day): new, real evidence worth
 weighing into the above, not a claim that it settles the question. A
@@ -111,6 +114,10 @@ second target proving generalization, not overfitting).
   `process attach` spawns a dynamic, never-forwarded gdbserver child
   port — see BACKLOG.md. Switch to plain gdbserver + --attach=<pid>
   next session, the same shape as debugserver --attach on iOS.)
+  UPDATE 2026-09-11: superseded — see the next bullet below.
+  gdbserver --attach was proven working the same session this bullet
+  anticipated, and every subsequent Android session has used it
+  successfully. This workflow question is closed.
 - One real MASTG Android target (not the whole set) — proves the core
   connection + context-panel loop end to end. The Android equivalent
   of UnCrackable L1 being v1's first real win, not an exhaustive
@@ -172,6 +179,12 @@ second target proving generalization, not overfitting).
   remain the only RELIABLE approach for now; named-symbol resolution
   is proven possible but not yet dependable. See BACKLOG.md's
   named-symbol-reliability entry for the full investigation.)
+  UPDATE 2026-09-26: the "STILL not yet confirmed firing live"
+  status above is stale — syscall annotation is now confirmed firing
+  live against real app processes, twice: Frida-0x8's `ioctl` call
+  and libantifrida.so's three wrapper-free `svc #0` sites inside
+  `detectFridaThree` (`openat`, `read`, `close`). See the 2026-09-26
+  update further above in this section for full results.
 - A second validation target (libantifrida.so, or a second MASTG app) — proves target-independence rather than overfitting to one app, the same discipline that made mace_patch trustworthy (validated on two unrelated iOS targets, not just one). UPDATE 2026-09-25: this is now paired with proving MACE's own signature capabilities (mace_patch register flip, live syscall annotation) on Android for the first time — planned as next session's explicit goal, run against Frida-0x8 first, then repeated here for generalization.  UPDATE 2026-09-26: complete — see the 2026-09-26 update above for the full results and the honest caveat on visible-bypass confirmation on this target.
 
 ### Priority 2 — deliberately deferred, not a Priority 1 blocker

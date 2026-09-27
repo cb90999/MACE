@@ -1341,3 +1341,110 @@ with the real gap being documentation rather than missing functionality?
 Leaning toward the latter -- worth a short README/docs note pointing to
 `memory write` for this case rather than building a new command that
 would just wrap it -- but not decided or actioned yet.
+
+### v2.1 polish bucket (2026-09-27) — sequence before v2.5
+Source: CB architecture discussion, closing out today's Unity/IL2CPP session
+
+Three items below, all scoped as polish/tooling work to pick up before
+v2.5 (EEA/Collatz) begins, not urgent enough to have blocked tonight's
+v2 pin. Grouped here as one bucket rather than scattered individually
+so they're easy to find as a set when work resumes after CB's return.
+
+## mace_patch_mem — memory-write patch command (2026-09-27)
+Source: CB architecture discussion; motivated directly by today's
+Unity/IL2CPP session (rotationSpeed field patch via raw `memory write`)
+
+`mace_patch` only writes registers (see the "mace_patch is
+register-only" entry above) -- today's SpinCube.rotationSpeed patch
+had to fall back to lldb's bare `memory write -s 4 <address> <value>`
+with none of `mace_patch`'s guardrails (stopped-process check,
+read-back confirmation, audit trail).
+
+Proposal: a new, separate command (not an overload of `mace_patch` --
+a register write is transient CPU-context state, a memory write
+mutates process state other threads can observe mid-flight, and that
+distinction should stay explicit rather than hidden behind one
+command guessing which kind of target it was given). Mirror
+`MACEPatch`'s existing shape from stop_hook.py:
+  - same guard: refuse to patch unless `process.GetState() ==
+    lldb.eStateStopped`
+  - write via SBProcess.WriteMemory (or an SBValue created from the
+    address) rather than shelling out to the `memory write` command
+    text, same reasoning as mace_patch's own SBValue-not-raw-command
+    design
+  - read back after writing to confirm the value actually took,
+    same as mace_patch already does
+  - log to the SAME `_patch_history` list mace_patch already
+    maintains, with a `kind: "register"` / `kind: "memory"` field
+    added to each record, rather than a second parallel history to
+    remember to check -- one audit trail, not two.
+
+## Class-based MACE commands never implement get_long_help() -- detailed help never reaches the user (2026-09-27)
+Source: CB architecture discussion ("better help for each of mace's
+tools"); root cause found via direct source inspection this session
+
+Real bug, not just thin documentation. Checked src/mace/lldb/
+stop_hook.py directly: every class-based command (MACEPatch,
+MACEPatchHistory, MACEGrep, MACESearch, MACEHwBreak,
+MACEHwBreakHistory, MACESwiftLoad) already has a well-written
+docstring with usage and worked examples -- MACEPatch's, for
+instance, explains the SBValue-vs-raw-`register-write` distinction
+and gives two examples. But grep confirms `get_long_help` is
+implemented NOWHERE in the file -- only `get_short_help`, seven
+times. lldb's class-based custom-command protocol requires
+`get_long_help()` explicitly for `help <cmd>` to show anything beyond
+the one-line summary; it does not automatically fall back to reading
+the class's own `__doc__`, unlike function-registered commands
+(mace_on, mace_trace_on, via `command script add -f`), which do get
+their docstring shown automatically. This is exactly why `help
+mace_patch` showed only "Patch a register via SBValue API; records
+to mace_patch_history" this session, with none of the actual usage
+detail already sitting in source.
+
+Fix is mechanical and low-risk, not a rewrite: add `get_long_help(self):
+return self.__doc__` (or a lightly reformatted version) to all seven
+classes above. The content already exists and is already good --
+this just wires it up. Good candidate to knock out early in the
+v2.1 bucket precisely because it's cheap and fixes a real, surprising
+gap rather than adding new surface area.
+
+## Automate the full connect sequence per platform, not as one unified script (2026-09-27)
+Source: CB architecture discussion; grounded in the existing
+"who performs the attach" architecture entry (2026-09-14) above
+
+CB asked whether the entire debugserver/lldb-server-start-through-
+lldb-connect sequence can be scripted for both iOS and Android.
+Yes, but as two separate automations, not one unified script --
+forcing a single script to cover both would paper over the real,
+already-documented architectural difference between the platforms
+(2026-09-14 entry: iOS's debugserver attaches server-side at launch;
+Android's lldb-server platform mode attaches nothing, with
+`process attach --pid` doing the real work client-side afterward).
+Trying to unify these would hide a distinction worth keeping visible,
+not simplify anything.
+
+Proposed shape, two layers per platform:
+
+1. Device-prep shell script (no lldb dependency at all):
+   - iOS: start sshd, launch debugserver --attach=<PID>
+   - Android: kill any stale lldb-server processes first (today's
+     "Address already in use" pain came directly from skipping this),
+     push/chmod lldb-server, launch via `su -c` in platform mode,
+     `adb forward`
+
+2. A single MACE lldb command per platform (`mace_connect_ios <ip>`,
+   `mace_connect_android <package>`) running the full proven
+   client-side sequence in one call: platform select, `settings set
+   platform.plugin.remote-android.package-name` (Android only),
+   `settings set target.parallel-module-load false`, the SIGSEGV/
+   SIGBUS passthrough, platform connect / process connect, and for
+   Android, resolving the real Activity name via `cmd package
+   resolve-activity --brief` and doing `am start` + `pidof` +
+   `process attach` automatically rather than manually.
+
+Layer 2 alone would have eliminated nearly every stumble from
+today's Unity/IL2CPP session: wrong port, the zsh nested-quoting
+mangle, the wrong guessed Activity class name, and forgetting the
+signal passthrough were all manual-sequence mistakes a scripted,
+proven command would not make. See docs/android-setup.md and
+docs/ios-setup.md for the exact sequences to encode.

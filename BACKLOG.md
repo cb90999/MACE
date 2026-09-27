@@ -321,6 +321,99 @@ Target: Panel must be genuinely useful standalone before AI layer lands.
    cbz/cbnz/b.eq/b.ne etc -> show both paths, highlight taken
    Makes "what happens next" answerable without stepping
 
+### External GUI recommendations feasibility assessment (2026-09-27)
+Source: MACE_GUI_Improvements_recs.docx, friend review of MACE's GitHub repo
+
+Reviewed against the items above. Three categories:
+
+**Already backlogged, no new action needed:** items 1 (pointer
+dereferencing), 2 (changed-register highlighting), 3 (memory-region
+labeling), and 5 (branch prediction) above already cover this doc's
+"changed-register emphasis," "conservative pointer dereference,"
+"memory-region labeling," and "conditional-branch preview"
+recommendations near-verbatim, down to the same SBProcess APIs. The
+doc's GEF/LLEF/Voltron/LIEF framing also already matches this file's
+own Reference implementations / LLEF coexistence / LIEF integration
+notes below (rebase_offset, "borrow modularity not multi-pane," LIEF
+as a backend not a GUI). No new entries needed for any of this --
+it's independent confirmation the existing backlog was pointed the
+right direction, not new scope.
+
+**New and feasible, worth adding:**
+
+6. Compact call-chain context (default 3 frames, not a full backtrace)
+   #0 validate()
+   #1 JNI checkInput()
+   #2 art_quick_generic_jni_trampoline
+   Full mace_bt stays available on demand. Low complexity -- a thin
+   wrapper around the existing backtrace machinery, just capped and
+   auto-displayed instead of requiring an explicit command.
+
+7. Breakpoint provenance/status panel -- surface resolution quality,
+   not just the ID:
+   BP 2.1  validate  libeea.so  RESOLVED  1 loc  hits=3
+   BP 5    foo                  PENDING
+   Directly motivated by a real gap hit THIS session: a `breakpoint
+   set --shlib libil2cpp.so --address 0x268A100` silently returned
+   "no locations (pending)" (wrong field used -- file offset instead
+   of RVA) and required manually running `breakpoint list` /
+   re-reading `help` output to notice. A pending/resolved indicator
+   surfaced automatically in the panel would have caught this
+   immediately instead of requiring manual inspection.
+
+8. Platform-aware register grouping -- group x0-x7 (arguments),
+   x8-x17 (temps), x19-x28 (callee-saved), then fp/lr/sp/pc, instead
+   of GEF's flat one-column dump. Low complexity for the generic
+   AArch64 PCS grouping. The doc's further suggestion (relabel
+   registers with runtime-specific meaning, e.g. Dart/Flutter) is a
+   natural extension of the Dart ARM64 register map research already
+   in this backlog (see "Dart ARM64 Register Map" section below) --
+   feasible as a later layer on top of the generic grouping, not a
+   blocker to shipping the generic version first.
+
+**Feasible but real tension, sequence carefully:**
+
+9. "Current decision" strip / "why am I stopped?" block (STOP/FLOW/
+   CALL summary line, or the fuller WHY/AT/FROM/CHANGED/NEXT block).
+   This is a capstone feature -- it's a compact rendering of data
+   items 2, 5, 6, and 7 above already produce once they exist, not a
+   new data source of its own. Real dependency: the FROM/CALL line
+   for a real call site needs the same call-site verification called
+   out as still-missing in 3b above (objc_msgSend-family confirmation
+   before trusting register contents) -- building the summary strip
+   on top of today's unverified call-site detection would just give
+   wrong one-line summaries more confidently than today's raw panel
+   does. Sequence this AFTER 3b's fix and AFTER items 5-7 exist, not
+   in parallel with them.
+
+10. Noise suppression / scope modes (`scope: app` / `scope: runtime`
+    / `scope: all`, prioritizing libil2cpp.so/libunity.so/app JNI libs
+    while suppressing framework clutter). Genuinely well-motivated --
+    today's own Unity/IL2CPP session loaded 150+ system libraries
+    before ever reaching app code, exactly the noise this would
+    suppress. The tension: classifying a module as "app" vs "runtime"
+    needs a real, generalizable basis (e.g. actual module type/path
+    conventions, similar to how item 3's memory-region fix replaces a
+    hardcoded address-range heuristic with SBProcess.
+    GetMemoryRegionInfo()) rather than a hand-maintained name list
+    like "libil2cpp.so, libunity.so" -- that would repeat the exact
+    target-specific-heuristic mistake already flagged and being fixed
+    elsewhere in this section. Feasible, but do the classification
+    properly (derived from real module metadata, not a hardcoded
+    per-engine list) rather than quickly.
+
+**Recommended sequencing (per the doc's own closing recommendation,
+endorsed):** ship changed-register highlighting + memory-region
+labels + inline pointer/string dereference (existing items 1-4) as
+one milestone first -- these three together answer "what changed,
+what is this address, what does it point to." Then branch prediction
+(5) and the new call-chain/breakpoint-status items (6-7). Item 9 (the
+summary strip) and item 10 (scope modes) come last, once their real
+dependencies (3b's fix; real module classification) are actually
+solid. This ordering fits before v2.5 as a sequencing target, not a
+hard deadline -- 9 and 10 in particular should not be rushed ahead of
+their prerequisites just to hit a date.
+
 ### Reference implementations:
 - GEF (hugsy/gef) - original inspiration, GDB
 - LLEF (foundryzero/llef, 489 stars) - GEF for LLDB, x86/ARM64/Go

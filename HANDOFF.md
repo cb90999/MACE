@@ -1,24 +1,32 @@
 # MACE — Session Handoff
 
-Paste this file's content (or attach it) at the start of a new Claude
-chat to resume MACE work with full context, without searching through
-old chat history. Update this file together with Claude at the end of
-every work session — it should always reflect "where things stand
-right now," not a full history (that's what ROADMAP.md and BACKLOG.md
-are for). A new LLM reading this file should be able to tell current
-truth apart from superseded investigation notes immediately — see the
-dedicated section below for exactly that.
+Last updated: 2026-09-27
+Repo branch: main
+Validated through: Unity/IL2CPP SpinCube (third validation target)
+Current milestone: v2 pinned; v2.1 next
+
+Paste or attach this file at the start of a new chat — with this
+assistant, a different LLM, or any capable assistant — to resume MACE
+work with full context, without searching through old chat history.
+Update this file together with whichever assistant you're using at
+the end of every work session — it should always reflect "where
+things stand right now," not a full history (that's what ROADMAP.md
+and BACKLOG.md are for). A fresh assistant reading this file should be
+able to tell current truth apart from superseded investigation notes
+immediately — see the dedicated section below for exactly that.
 
 ## Mandatory workflow — always follow this
-CB edits all files personally via nano; Claude never edits the repo
-directly. For every change:
-1. Claude gives the exact text and says which file + where to add/edit.
+CB edits all files personally via nano; the assistant never edits the
+repo directly. For every change:
+1. The assistant gives the exact text and identifies the file and
+   insertion/edit location.
 2. CB opens the file in nano, makes the edit, saves.
-3. Claude gives validation commands (grep/wc/etc) to confirm the edit
-   landed correctly.
-4. Only after validation passes, Claude gives the git add/commit/push
-   commands.
-This applies to ROADMAP.md, BACKLOG.md, docs/, source code — everything.
+3. The assistant gives validation commands (grep/wc/etc) to confirm
+   the edit landed correctly.
+4. Only after validation passes, the assistant gives the git
+   add/commit/push commands.
+This applies to ROADMAP.md, BACKLOG.md, docs/, source code — everything,
+and to any LLM assistant working the project, not just one specific one.
 
 ## Active milestone
 - v2: PINNED (2026-09-27) — all three validation targets complete.
@@ -44,7 +52,32 @@ October 12 (surgery recovery) — EXCEPT October 1-4, which are open.
 Full detail and troubleshooting: docs/android-setup.md,
 docs/ios-setup.md. This is the fast path.
 
+Known-good host (confirmed 2026-09-25, Frida-0x8 session): Homebrew
+lldb 23.1.1. Not re-verified during the 2026-09-27 Unity/IL2CPP
+session (plain `lldb` was run without checking which binary resolved)
+-- treat Homebrew lldb as the proven choice, and confirm with `which
+lldb` / `lldb --version` before assuming Apple's bundled
+/usr/bin/lldb behaves identically; that substitution has not been
+tested and was flagged in earlier sessions as a real, previously-
+uncontrolled variable.
+Known-good Android server toolchain: extracted from Android NDK r27d
+(LTS), at .../lib/clang/18/lib/linux/aarch64/lldb-server -- i.e. the
+NDK's own clang/lldb toolchain version 18, not a standalone
+lldb-server release version.
+Device baseline: Pixel 10a, Android 16 / API 36, arm64-v8a, Magisk
+root.
+
+When validating LLDB itself independently of MACE (e.g. isolating
+whether a problem is MACE's stop-hook logic or lldb's own behavior),
+launch the known-good Homebrew binary with `--no-lldbinit` so MACE's
+auto-load doesn't run. Do not use that mode for normal MACE operation
+-- only when intentionally testing vanilla lldb.
+
 ### Android
+Platform mode + `su` is the only workflow currently proven working in
+the MACE Pixel 10a / Android 16 test environment (not a universal
+claim about lldb-server on Android generally):
+
     adb push lldb-server /data/local/tmp/lldb-server
     adb shell chmod 755 /data/local/tmp/lldb-server
     adb shell "su -c 'ps -A | grep lldb-server'"   # kill any stale PIDs first
@@ -86,8 +119,8 @@ wrong or outdated as advice today. Do not re-derive or re-try these:
   context on why this was believed originally.
 - `lldb-server gdbserver --attach` mode on Android — do not use.
   Caused an outright lldb-server segfault (NDK toolchain crash) when
-  tried 2026-09-27. Platform mode + `su` is the only proven-working
-  launch method.
+  tried 2026-09-27, in this project's own environment. Platform mode
+  + `su` is the only launch method proven working here.
 - Il2CppDumper mainline release (Perfare, v6.7.46) does NOT support
   IL2CPP metadata v39 (Unity 6.3 LTS's format) — use the
   Doppelglower/Il2CppDumper fork instead, built from source.
@@ -131,6 +164,10 @@ detail. In rough order of effort:
   are explicitly tagged inline, not just here)
 - BACKLOG.md — parked research threads, feasibility assessments,
   architecture ideas (chronological, search by date or keyword)
+
+Known gap: README.md is stale relative to this file (still describes
+Android as "not attempted yet" and MACE as v1) — worth a documentation
+pass eventually, not blocking, flagged 2026-09-27.
 
 ## Repo
 github.com/cb90999/MACE

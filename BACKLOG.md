@@ -1448,6 +1448,24 @@ mangle, the wrong guessed Activity class name, and forgetting the
 signal passthrough were all manual-sequence mistakes a scripted,
 proven command would not make. See docs/android-setup.md and
 docs/ios-setup.md for the exact sequences to encode.
+## README.md is stale relative to actual v2 status (2026-09-27)
+Source: flagged during HANDOFF.md external review
+
+README.md's Status section still says "v1 — active development" and
+describes Android as "not attempted yet," while v2 is now pinned with
+all three Android/cross-platform validation targets complete
+(Frida-0x8, libantifrida.so, Unity/IL2CPP). This doesn't undermine
+HANDOFF.md or BACKLOG.md's accuracy -- if anything it's a real
+argument for why HANDOFF.md exists as the authoritative "current
+state" reference -- but README is the project's public front door and
+should eventually match.
+
+Deferred, not urgent -- add to the v2.1 polish bucket above rather
+than fixing tonight. Scope when picked up: update the Status section
+(v1 -> v2 pinned), correct the Android capability description to
+reflect the three completed validation targets, and add a short
+pointer to HANDOFF.md for anyone wanting the live current-state view
+rather than the project overview README is meant to give.
 
 ## Optional future validation target: BayatGames/RedRunner (2026-09-27)
 Source: CB find, open-source Unity 2D endless runner (MIT-licensed)

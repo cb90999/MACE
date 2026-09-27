@@ -179,6 +179,21 @@ second target proving generalization, not overfitting).
   remain the only RELIABLE approach for now; named-symbol resolution
   is proven possible but not yet dependable. See BACKLOG.md's
   named-symbol-reliability entry for the full investigation.)
+
+  [SUPERSEDED 2026-09-25 — flagged by external review, 2026-09-27:
+  the "raw address breakpoints remain the only reliable approach"
+  conclusion above, and the attach-vs-launch framing that preceded
+  it, no longer reflect current architecture guidance. The real,
+  more precise explanation is BACKLOG.md's "who performs the
+  attach" entry (2026-09-14): Android's lldb-server platform mode +
+  `settings set platform.plugin.remote-android.package-name` +
+  `process attach` after a normal app launch makes named-symbol
+  breakpoints reliably resolve — confirmed repeatedly against
+  Frida-0x8 over the 2026-09-24/25 sessions (see the
+  viability-question update earlier in this section). This block is
+  preserved deliberately as real investigation history, not deleted
+  — read it as background on how the reliability gap was diagnosed,
+  not as current guidance on which breakpoint approach to use.]
   UPDATE 2026-09-26: the "STILL not yet confirmed firing live"
   status above is stale — syscall annotation is now confirmed firing
   live against real app processes, twice: Frida-0x8's `ioctl` call

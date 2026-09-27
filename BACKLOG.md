@@ -1448,3 +1448,24 @@ mangle, the wrong guessed Activity class name, and forgetting the
 signal passthrough were all manual-sequence mistakes a scripted,
 proven command would not make. See docs/android-setup.md and
 docs/ios-setup.md for the exact sequences to encode.
+
+## Optional future validation target: BayatGames/RedRunner (2026-09-27)
+Source: CB find, open-source Unity 2D endless runner (MIT-licensed)
+
+Complements tonight's SpinCube target rather than replacing it. Tonight's
+custom project proved the full pipeline (build -> dump -> RVA breakpoint
+-> register read -> patch -> visible effect) on the simplest possible
+case, deliberately. RedRunner is a real, non-trivial game (player
+controller, scoring, collision, coroutines, prefab instantiation) that
+would prove the same pipeline holds up against actual gameplay logic --
+closer to what a real MASTG-style Android game assessment looks like.
+
+Key advantage over the AstroQuest attempt: being open source and
+self-built (not pulled from Play Store), there is no Play Store
+Licensing/entitlement check to hit -- clone, build locally with IL2CPP +
+Development Build the same way as tonight, no apktool-patch pipeline,
+no licensing wall.
+
+Not urgent -- optional next step after the v2.1 polish bucket above,
+not before it. Worth remembering as the answer if a "test against a
+real game, not a synthetic one" need comes up again.

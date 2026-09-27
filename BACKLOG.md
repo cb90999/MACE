@@ -1225,3 +1225,26 @@ recoverable flag instead of "any input satisfying two linear equations."
 Considered and rejected: accepting any passing input (gives up on a unique
 flag entirely) and garbage-output-on-collision (papers over the design gap
 rather than fixing it). Not yet implemented or tested.
+
+## mace_patch is register-only, not a general memory-write primitive (2026-09-27)
+Source: Unity/IL2CPP validation session (third validation target)
+
+Discovered while trying to zero out a live SpinCube.rotationSpeed instance
+field (a struct field at `this`+0x20) to visually confirm a patch's effect
+on-device. `mace_patch w0 1`-style register patches (the only form ever
+used or documented so far, e.g. yesterday's Frida-0x8 cmpstr patch) do not
+apply here -- `help mace_patch` is explicit about this: "Patch a register
+via SBValue API." There is no memory-address form.
+
+Worked around this session with lldb's own built-in `memory write -s 4
+<address> <value>`, which has no such limitation -- confirmed working,
+zeroing the field caused the on-device cube to visibly stop rotating.
+
+Open question, not yet decided: should MACE grow a memory-write-capable
+patch command (e.g. `mace_patch_mem <address> <value>`) for parity with
+`mace_patch`'s register form, or is `memory write` (already a standard
+lldb built-in, already proven here) the intended and sufficient answer,
+with the real gap being documentation rather than missing functionality?
+Leaning toward the latter -- worth a short README/docs note pointing to
+`memory write` for this case rather than building a new command that
+would just wrap it -- but not decided or actioned yet.

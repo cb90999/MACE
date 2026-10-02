@@ -375,6 +375,29 @@ OpenClaw agent skill demonstrating the same "agent queries llmfit,
 decides routing" pattern for a different agent framework — worth a
 look when the DSPy layer gets built.
 
+**KVM-escape research write-up's multi-agent harness** (pwn.ai/blog/
+kvmescape, exploit itself out of scope — found 2026-09-29) — a second,
+complementary routing axis to fold in alongside llmfit/DSPy's cost-
+based local/cloud routing above: the harness switches between OpenAI/
+Anthropic/DeepSeek models by TASK ROLE, not just cost or capability —
+e.g. a cheap model drafts, a different model specifically reviews.
+Concrete pattern worth reusing for v3's agent+human framing: named
+skeptical-reviewer agents (the writeup calls them Sus, Meitner,
+Hypatia, Descartes, Bohr) whose job is to reject unsound theories
+before an expensive live attempt runs, plus "evidence gates" that
+refuse to call an intermediate result a win without an explicit
+checked marker. Maps onto MACE as a role split for the v3 annotation
+layer: one model proposes an annotation/patch, a second, deliberately
+skeptical pass reviews it before it's surfaced or applied — distinct
+from and complementary to the confidence-cascade cost-routing pattern
+(see BACKLOG.md's 2026-10-02 "confidence-cascade routing" entry) and
+to idamcp's Security Dashboard human-approval gate below, which stays
+the final check regardless of how many model passes precede it. Also
+notable for engineering discipline worth carrying over regardless of
+the model-routing question: timestamped, append-only expected-vs-
+observed logging, and live in-place repair instead of full rebuilds —
+both already consistent with MACE's own devlog/verification habits.
+
 **FreeToken** (arxiv.org/pdf/2608.16157) — considered and ruled out as
 a direct reference. Solves MoE expert-streaming between discrete GPU
 VRAM and host RAM over PCIe; that split doesn't exist on Apple Silicon's

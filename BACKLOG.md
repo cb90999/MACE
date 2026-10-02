@@ -1670,3 +1670,37 @@ not a validation target.
 
 All three explicitly scoped as post-GA work, not v2.1 or v2.5 --
 heap annotation needs the iOS fixture to prove the mechanism first.
+
+
+## Watched registers are hardcoded, not configurable (2026-10-02)
+Source: CB observation, end-of-session 2026-10-02
+
+`WATCH_REGS = [0, 1]` in src/mace/lldb/stop_hook.py (line 16) is a
+hardcoded module-level constant -- `mace_on` always prints "x0/x1
+watched" and `render_panel()` is always called with that fixed list.
+There's no way to watch a different register (or set of registers)
+without editing source. Not yet an active problem (x0/x1 covers the
+common `this`-pointer/argument case that's driven every validation so
+far), but a real gap once a target's interesting state lives
+elsewhere -- e.g. a syscall number in x8, a return value in x0 after
+a specific call, or tracking more than two registers at once.
+
+Architecture not yet decided -- three shapes worth weighing when this
+is picked up:
+1. `mace_on x0 x8 x19` -- pass the watch list as args to mace_on
+   itself. Simplest, but ties register selection to the on/off
+   lifecycle (can't change the watch list without toggling off/on).
+2. A separate `mace_watch <reg> [<reg> ...]` command, settable
+   independent of mace_on/mace_off and persisting across stops within
+   a session -- same shape as mace_patch/mace_hw_break being separate
+   from the stop-hook lifecycle. Probably the better fit, since it
+   mirrors how other MACE state (patch history, hw-break history)
+   is already managed as its own command rather than bolted onto
+   mace_on's args.
+3. A config file or `settings set`-style persistent value -- likely
+   overkill for a single list of register names; probably only worth
+   it if/when other per-session MACE configuration shows up that
+   would benefit from the same mechanism.
+
+Leaning toward option 2 but not committed -- revisit with fresh eyes
+when this is actually picked up.

@@ -1487,3 +1487,170 @@ no licensing wall.
 Not urgent -- optional next step after the v2.1 polish bucket above,
 not before it. Worth remembering as the answer if a "test against a
 real game, not a synthetic one" need comes up again.
+
+
+## v3 AI layer: confidence-cascade routing and IDA MCP benchmark data (2026-10-02)
+Source: arxiv 2609.26550 (TypeSafe JEV, LLM-as-judge economics) and
+Costin Raiu/Hex-Rays IDA MCP announcement thread, both found 2026-09-27
+
+Two independent research finds, both pointing at the same v3 AI layer
+area (see "AI layer is the killer differentiator" above).
+
+**Confidence-cascade pattern** (arxiv 2609.26550): the paper itself is
+about LLM-as-judge evaluation economics, not RE or debugging -- no
+direct relevance there. But its core mechanism is a real, applicable
+pattern for the AI layer's own design: a cheap, decision-only model
+returns a verdict + confidence; only low-confidence cases escalate to
+a stronger, more expensive model. Paper's own numbers: matches a
+frontier judge within 3 points at 0.36% of the cost, 99% of frontier
+accuracy at 57% of the cost via the cascade. Maps onto MACE's v3
+annotation layer as: a cheap heuristic confidently flags "this
+register was just written after a call return, worth attention"
+(Rule 20-type judgment) for the common case, escalating to a full
+reasoning pass only when the heuristic itself is uncertain -- a cost/
+reliability axis independent of local-vs-cloud routing (see llmfit/
+DSPy item in ROADMAP.md's v3 Design References, which this doesn't
+replace or compete with -- see the 2026-09-29 KVM-harness addition
+there for how the two axes relate).
+
+**Hex-Rays' official IDA MCP server** (Costin Raiu thread, hex-rays
+blog): validates the "expose RE tooling over MCP" direction
+independently -- IDA Pro's own maker shipping a first-party MCP
+server is a strong external signal this is the right architecture,
+not a MACE-specific guess, reinforcing the mrexodia/idamcp precedents
+already logged in ROADMAP.md's v3 Design References. Also surfaced
+concrete open-weight model data for a future local-inference tier:
+Costin's internal malware-analysis benchmarks found DeepSeek v4.1
+Flash, Kimi K3, and GLM 5.3 performing close to GPT-6-Luna/Gemini 3.8
+Flash, though needing 128-256GB VRAM; at consumer-GPU scale (24GB),
+Qwen 3.8 27B quantized works but "gets stuck and overthinks," needing
+a more hands-on harness. Relevant to the colibri/GLM-5.2 local-
+inference-tier item in the AI Layer list above -- GLM 5.3 specifically
+is a newer, apparently-stronger candidate worth checking against that
+item whenever it's picked up.
+
+## Raspberry Pi as a clean-room AArch64 register-validation fixture, not a mobile target (2026-10-02)
+Source: CB discussion, 2026-09-29
+
+Clarified scope after CB flagged "Raspberry Pi items" in passing: NOT
+a reference to the RP2350/Pico USB-glitching tool for the usbliter8
+BootROM exploit chain (Platform list above) -- that's a different,
+unrelated use of similar hardware. This is about a plain Raspberry Pi
+running Linux as a cheap, always-on, fully root-accessible arm64
+Linux box to validate MACE's own register/annotation mechanics in
+isolation from mobile runtime noise (no ART, no JNI, no ObjC/Swift,
+no mobile debuggable-flag/licensing quirks) -- the same role the
+`darwin-vm` PAC-enabled fixture (Context Panel v2 section above)
+already plays for iOS-side register work.
+
+Deliberately scoped narrow: useful as a target-independence stress
+test (docs/target-independence.md's own stated purpose -- catching a
+hidden iOS- or Android-specific assumption baked into supposedly-
+generic logic, on a third environment that's neither) -- NOT as a new
+mobile validation target, and NOT for building or testing mobile-
+specific features there. Doing the latter would dilute MACE's actual
+differentiator (mobile-specialized RE) into generic AArch64 Linux
+debugging, which GEF/LLEF/pwndbg already do well. CB agreed with this
+framing: "We can use Rpi for some specific arm64 register values
+surfaced in mace if necessary" -- i.e. a narrow verification tool, not
+a project direction.
+
+## Heap pointer annotation — tiered design and iOS test fixture plan (2026-10-02)
+Source: CB discussion, 2026-09-30; expands the "Heap pointer
+dereference -- follow xN into heap memory" bullet in AArch64 Analysis
+above
+
+Two separable pieces, deliberately sequenced:
+
+1. Classification (mostly already planned) -- once the memory-region
+   labeling work lands (Context Panel v2 section above,
+   SBProcess.GetMemoryRegionInfo()), MACE can already tell a register
+   value sits in the heap region. Foundation, not new work.
+
+2. Structured annotation of what's AT a heap address, once classified
+   -- the actual open design question, tiered by how much runtime-
+   specific knowledge each tier assumes:
+   - Generic: bounded-read + the same printable-string heuristic
+     already planned for pointer dereferencing (Context Panel v2 item
+     4) -- works on any target, no allocator knowledge needed.
+   - Runtime-aware: for ObjC/Swift heap objects, the isa pointer at
+     offset 0 identifies the class -- reuses the same machinery
+     already built for objc_msgSend receiver annotation, not new
+     logic.
+   - Allocator-aware (explicitly deferred): reading actual allocator
+     metadata (chunk headers, size classes) for allocation-level
+     detail. Higher effort, higher risk of becoming another hardcoded,
+     non-generalizing heuristic (same failure mode
+     docs/target-independence.md exists to catch) -- out of scope for
+     now. Tiers 1-2 only.
+
+**Test fixture plan**: a deliberately minimal, purpose-built iOS app
+(same discipline as SpinCube for IL2CPP, the plain native test binary
+for named-symbol resolution) -- NOT a real app, so ground truth is
+known in advance:
+- one plain buffer (malloc/new'd string or byte array) -- validates
+  tier 1 (generic string detection)
+- one object instance (Swift/ObjC class with known fields) --
+  validates tier 2 (isa/class identification)
+- one deliberately un-annotatable heap pointer (freed memory, or no
+  printable content and no isa) -- a negative test case, validating
+  that the feature reports "nothing recognizable here" honestly
+  rather than guessing, same discipline as the syscall annotator's
+  `syscall #113` fallback for unrecognized numbers.
+Each held in a register/local at a controlled breakpoint, so expected
+output is known before the feature runs, not eyeballed against a real
+app's heap.
+
+iOS chosen as the first platform deliberately, not by default:
+Android's current allocator (Scudo, default since Android 11,
+including the Pixel 10a) deliberately randomizes chunk layout and adds
+guard regions specifically to defeat allocator-metadata reasoning --
+exactly the tier-3 territory this plan defers. iOS's heap
+(substantially libmalloc-based, less adversarial) is the easier first
+case precisely because it won't force tier 1-2 logic to already
+understand allocator-hardening tricks before the basic mechanism is
+proven. See the N4TIVE/Scudo entry below for the deliberate Android
+follow-up once this proves out.
+
+## Post-GA Android heap/anti-debug/JNI validation candidates (2026-10-02)
+Source: CB research, 2026-09-29/30
+
+Primary candidate: **0xCD4/N4TIVE** (github.com/0xCD4/N4TIVE) -- an
+Android native RE CTF app, API 26+, built with NDK/CMake. Six
+challenges: XOR decryption, buffer overflow, JNI type confusion,
+anti-debugging bypass, heap memory exploitation, and a custom stack-
+based VM (32 opcodes). Strong candidate because it's ready-made and
+installable today (unlike building a fixture from scratch) and covers
+multiple backlog items at once: the heap-exploitation challenge is a
+direct candidate for validating the heap-annotation work above (worth
+confirming it actually exercises Scudo rather than an older allocator
+once installed -- "API 26 and higher" is a minimum, not a guarantee of
+identical behavior on Android 16); the anti-debugging challenge is a
+rerun of MACE's already-proven capability (mace_patch clearing a
+ptrace-style check, validated on iOS LocalAuth/DVIA-v2 and Android
+antifrida/Frida-0x8); JNI type confusion overlaps with the Frida-0x8
+JNI validation work.
+
+Secondary/backup candidate: a Scudo-allocator vulnerability in an
+Android app CB went through during a MobileHackingLab Android
+userland fuzzing course -- not yet located/named, CB to find and cite
+properly before this is actionable. Real value once found: course-
+verified ground truth on the actual allocator (Scudo) every current
+Android device uses, including the Pixel 10a.
+
+Considered and dismissed: **CENSUS/shadow** (github.com/CENSUS/shadow)
+-- a jemalloc heap exploitation framework. Wrong allocator for any
+current target: jemalloc was Android's userland allocator through
+roughly Android 9/10, superseded by Scudo as the hardened default
+since Android 11. Exercising jemalloc via an old API-level emulator
+would validate heap-walking skill that doesn't transfer to any real
+Android device MACE will actually encounter. Also GDB-native
+(gdbserver + Python/pyrsistence), not lldb, so there's no direct
+integration path regardless of the allocator mismatch. Retained here
+only as a technique reference -- its general approach to walking
+allocator metadata could inform MACE's own tier-3 allocator-aware
+work (heap annotation entry above) if that's ever tackled, but it's
+not a validation target.
+
+All three explicitly scoped as post-GA work, not v2.1 or v2.5 --
+heap annotation needs the iOS fixture to prove the mechanism first.

@@ -43,10 +43,24 @@ and to any LLM assistant working the project, not just one specific one.
 
 CB is unavailable for MACE work after today until approximately
 October 12 (surgery recovery) — EXCEPT October 3-4, which are open.
-Planned for that window: finish v2.1 connect automation (Sat), then
-either N4TIVE install/validation on the Pixel 10a or the iOS
-heap-annotation test fixture (Sun, leaning N4TIVE — see BACKLOG.md's
-2026-10-02 entries).
+Planned for that window:
+- Saturday Oct 3, two sessions:
+  - Session 1: finish v2.1 connect automation — mace_connect_android
+    (Layer 2), then iOS device-prep script + mace_connect_ios
+    (Layer 1+2). Closes the full v2.1 bucket.
+  - Session 2: N4TIVE (github.com/0xCD4/N4TIVE) install + validation
+    on the Pixel 10a — confirm it exercises Scudo, rerun the
+    anti-debug bypass, start on the heap-exploitation challenge.
+- Sunday Oct 4, one session only (CB prepping for hospital stay that
+  day): EEA/Collatz review and v2.5 planning. CB brings the source
+  code, answer key, and the transcript of how Opus solved it; review
+  cold and build a concrete, sequenced v2.5 plan -- not yet
+  scoped/decided as of 2026-10-02, deliberately deferred until the
+  actual material is reviewed rather than guessed at. Should also
+  decide where the N4TIVE/CTF material (post-GA validation work,
+  see BACKLOG.md's 2026-10-02 entries) fits relative to this --
+  likely a separate bucket from EEA/Collatz, not the same thing, but
+  confirm explicitly during this session rather than assuming.
 
 ## Validated targets (v2, complete — see ROADMAP.md Priority 1)
 - Frida-0x8 — mace_patch register flip, live syscall annotation.
@@ -191,16 +205,23 @@ See BACKLOG.md's "v2.1 polish bucket (2026-09-27)" section (and its
    assessment" — call-chain context, breakpoint status panel,
    register grouping.
 
-## After v2.1 closes (planned Oct 4)
-Pick one of (see BACKLOG.md's 2026-10-02 research-roundup entries for
-full detail on both):
-- N4TIVE (github.com/0xCD4/N4TIVE) install + validation on the
-  Pixel 10a — primary lean, concrete and bounded for a single day.
-- iOS heap-annotation test fixture build (tiered design already
-  logged) — larger, more open-ended, foundational for the heap
-  pointer annotation feature.
+## After v2.1 closes (planned Oct 3, Session 2)
+N4TIVE (github.com/0xCD4/N4TIVE) install + validation on the
+Pixel 10a -- see BACKLOG.md's 2026-10-02 "Post-GA Android
+heap/anti-debug/JNI validation candidates" entry for full detail.
+
+## Oct 4 — EEA/Collatz review and v2.5 planning (one session only)
+Not yet scoped. CB to bring: Collatz source code, answer key, and
+the transcript/output of how Opus solved it. Review cold before
+proposing architecture (e.g. whether this becomes an iOS/Android
+validation app, a case study for the v3 AI layer, or something
+else) -- deliberately not guessed at ahead of seeing the actual
+material. Output should be a concrete, sequenced plan specific
+enough to survive the Oct 12+ gap without CB having to re-explain
+context in a fresh chat.
+
 Also logged, not yet scoped: watched registers (WATCH_REGS = [0, 1]
-in stop_hook.py) are hardcoded, not configurable — see BACKLOG.md's
+in stop_hook.py) are hardcoded, not configurable -- see BACKLOG.md's
 2026-10-02 entry for three architecture options under consideration.
 
 ## Key reference docs (read these instead of re-deriving from scratch)

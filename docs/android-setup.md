@@ -47,7 +47,14 @@ bare `*` needs nested shell quoting that is easy to mangle on paste
 (zsh will report `no matches found` from glob expansion if the
 quoting breaks).
 
-    adb shell "su -c '/data/local/tmp/lldb-server platform --listen 0.0.0.0:10500 --server &'"
+    adb shell "su -c '/data/local/tmp/lldb-server platform --listen 0.0.0.0:10500 --server >/dev/null 2>&1 &'"
+
+    Redirecting stdout/stderr (>/dev/null 2>&1) before the trailing & is
+    required, not optional — without it, adb shell blocks waiting on the
+    backgrounded process's still-open pipe back to your terminal, which
+    looks like a hang (confirmed live 2026-10-02: lldb-server had
+    actually started fine, adb shell just never returned).
+
     adb forward tcp:10500 tcp:10500
 
 Port 10500 is this project's standard Android port — use it

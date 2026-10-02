@@ -8,6 +8,7 @@ import sys
 import re
 import time
 import inspect
+import struct
 
 from mace.lldb.lldb_session import snapshot_from_frame, _get_breakpoint_id
 from mace.display.context_panel import render_panel, Color
@@ -27,6 +28,12 @@ _patch_history: list[dict] = []
 # In-session hardware-breakpoint audit trail, same lifecycle/purpose
 # as _patch_history above.
 _hw_break_history: list[dict] = []
+
+# In-session memory-patch audit trail, same lifecycle/purpose as
+# _patch_history above, kept separate since mace_patch (register) and
+# mace_patch_mem (memory) are different operations worth reviewing
+# independently.
+_patch_mem_history: list[dict] = []
 
 # In-session snapshot history — every ContextSnapshot built while
 # mace_on is active, kept for mace_search. Previously each snapshot
@@ -82,6 +89,8 @@ def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand("command script add -c stop_hook.MACESwiftLoad mace_swift_load")
     debugger.HandleCommand("command script add -c stop_hook.MACEPatch mace_patch")
     debugger.HandleCommand("command script add -c stop_hook.MACEPatchHistory mace_patch_history")
+    debugger.HandleCommand("command script add -c stop_hook.MACEPatchMem mace_patch_mem")
+    debugger.HandleCommand("command script add -c stop_hook.MACEPatchMemHistory mace_patch_mem_history")
     debugger.HandleCommand("command script add -c stop_hook.MACEGrep mace_grep")
     debugger.HandleCommand("command script add -c stop_hook.MACESearch mace_search")
     debugger.HandleCommand("command script add -c stop_hook.MACEHwBreak mace_hw_break")
@@ -256,6 +265,169 @@ class MACEPatchHistory:
     def get_long_help(self):
         return inspect.cleandoc(self.__doc__)
 
+
+class MACEPatchMem:
+    """
+    mace_patch_mem <address> <size> <value> — write <size> bytes (1, 2,
+    4, or 8) to memory at <address> via LLDB's SBProcess.WriteMemory
+    API (not the raw `memory write` command text), guarded against
+    patching a process that isn't stopped, honoring the target's
+    actual byte order, with every successful write recorded to the
+    mace_patch_mem_history audit trail. Complements mace_patch
+    (register-only) for the common case of patching a value already
+    resolved in memory rather than held in a register.
+
+    Examples:
+      mace_patch_mem 0x1024a8000 4 0
+      mace_patch_mem 0x1024a8000 1 0x1
+    """
+
+    def __init__(self, debugger, internal_dict):
+        pass
+
+    def __call__(self, debugger, command, exe_ctx, result, internal_dict=None):
+        parts = command.strip().split()
+        if len(parts) != 3:
+            result.AppendMessage("[MACE] Usage: mace_patch_mem <address> <size> <value>")
+            result.AppendMessage("[MACE]   e.g. mace_patch_mem 0x1024a8000 4 0")
+            result.AppendMessage("[MACE]        mace_patch_mem 0x1024a8000 1 0x1")
+            return
+
+        addr_str, size_str, value_str = parts
+
+        process = exe_ctx.GetProcess()
+        if not process.IsValid() or process.GetState() != lldb.eStateStopped:
+            result.AppendMessage(
+                "[MACE] Cannot patch — process is not stopped. "
+                "Continue (c) until you hit a breakpoint, then patch."
+            )
+            return
+
+        try:
+            addr = int(addr_str, 0)
+        except ValueError:
+            result.AppendMessage(f"[MACE] Could not parse '{addr_str}' as an address.")
+            return
+
+        try:
+            size = int(size_str, 0)
+        except ValueError:
+            result.AppendMessage(f"[MACE] Could not parse '{size_str}' as a size.")
+            return
+
+        if size not in (1, 2, 4, 8):
+            result.AppendMessage(f"[MACE] Unsupported size {size} — must be 1, 2, 4, or 8 bytes.")
+            return
+
+        try:
+            new_value = int(value_str, 0)
+        except ValueError:
+            result.AppendMessage(f"[MACE] Could not parse value '{value_str}' as an integer.")
+            return
+
+        target = exe_ctx.GetTarget()
+        byte_order = "<" if target.GetByteOrder() == lldb.eByteOrderLittle else ">"
+        fmt = {1: "B", 2: "H", 4: "I", 8: "Q"}[size]
+
+        error = lldb.SBError()
+        old_bytes = process.ReadMemory(addr, size, error)
+        if not error.Success():
+            result.AppendMessage(f"[MACE] Could not read memory at 0x{addr:x}: {error.GetCString()}")
+            return
+        old_value = struct.unpack(byte_order + fmt, old_bytes)[0]
+
+        new_bytes = struct.pack(byte_order + fmt, new_value & ((1 << (size * 8)) - 1))
+
+        error = lldb.SBError()
+        bytes_written = process.WriteMemory(addr, new_bytes, error)
+        if not error.Success() or bytes_written != size:
+            result.AppendMessage(f"[MACE] Patch failed: {error.GetCString()}")
+            return
+
+        # Read back to confirm the write actually took, rather than
+        # trusting WriteMemory's return value alone.
+        error = lldb.SBError()
+        confirmed_bytes = process.ReadMemory(addr, size, error)
+        confirmed_value = struct.unpack(byte_order + fmt, confirmed_bytes)[0] if error.Success() else None
+
+        frame = exe_ctx.GetFrame()
+        thread = exe_ctx.GetThread()
+        pc = frame.GetPC() if frame.IsValid() else 0
+        bp_id = _get_breakpoint_id(thread) if frame.IsValid() else None
+        func_name = (frame.GetFunctionName() or "?") if frame.IsValid() else "?"
+
+        record = {
+            "address":       addr,
+            "size":          size,
+            "old_value":     old_value,
+            "new_value":     confirmed_value if confirmed_value is not None else new_value,
+            "pc":            pc,
+            "breakpoint_id": bp_id,
+            "function":      func_name,
+            "timestamp":     time.strftime("%H:%M:%S"),
+        }
+        _patch_mem_history.append(record)
+
+        bp_str = f" (breakpoint {bp_id})" if bp_id else ""
+        result.AppendMessage(
+            f"[MACE] 0x{addr:x} ({size}B): 0x{old_value:x} -> 0x{record['new_value']:x}"
+            f"  at 0x{pc:x} in {func_name}{bp_str}"
+        )
+        if confirmed_value is not None and confirmed_value != new_value:
+            result.AppendMessage(
+                f"[MACE]   warning: requested 0x{new_value:x} but memory "
+                f"reads back as 0x{confirmed_value:x} — write may have been "
+                f"truncated or masked to the requested size."
+            )
+        elif confirmed_value is None:
+            result.AppendMessage(
+                "[MACE]   note: could not verify via read-back after write."
+            )
+
+    def get_short_help(self):
+        return "Patch memory via SBProcess API; records to mace_patch_mem_history"
+
+    def get_long_help(self):
+        return inspect.cleandoc(self.__doc__)
+
+
+class MACEPatchMemHistory:
+    """
+    mace_patch_mem_history — show every mace_patch_mem write applied
+    this session, in order. `mace_patch_mem_history clear` resets the
+    log.
+    """
+
+    def __init__(self, debugger, internal_dict):
+        pass
+
+    def __call__(self, debugger, command, exe_ctx, result, internal_dict=None):
+        arg = command.strip()
+
+        if arg == "clear":
+            count = len(_patch_mem_history)
+            _patch_mem_history.clear()
+            result.AppendMessage(f"[MACE] Patch-mem history cleared ({count} entries removed).")
+            return
+
+        if not _patch_mem_history:
+            result.AppendMessage("[MACE] No memory patches applied yet this session.")
+            return
+
+        result.AppendMessage(f"{Color.BOLD}── MACE patch-mem history ──{Color.RESET}")
+        for i, rec in enumerate(_patch_mem_history, 1):
+            bp_str = f"  breakpoint {rec['breakpoint_id']}" if rec['breakpoint_id'] else ""
+            result.AppendMessage(
+                f"  {Color.WHITE}[{i}]{Color.RESET}  {rec['timestamp']}  "
+                f"0x{rec['address']:x} ({rec['size']}B): 0x{rec['old_value']:x} -> 0x{rec['new_value']:x}"
+                f"  at 0x{rec['pc']:x} in {rec['function']}{bp_str}"
+            )
+
+    def get_short_help(self):
+        return "Show (or clear) the mace_patch_mem audit trail for this session"
+
+    def get_long_help(self):
+        return inspect.cleandoc(self.__doc__)
 
 class MACEGrep:
     """

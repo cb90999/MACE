@@ -1,9 +1,11 @@
 # MACE — Session Handoff
 
-Last updated: 2026-09-27
+Last updated: 2026-10-02
 Repo branch: main
-Validated through: Unity/IL2CPP SpinCube (third validation target)
-Current milestone: v2 pinned; v2.1 next
+Validated through: Unity/IL2CPP SpinCube (third validation target);
+mace_patch_mem live-validated against the same target
+Current milestone: v2 pinned; v2.1 in progress (2 of 3 items done,
+3rd half done — see below)
 
 Paste or attach this file at the start of a new chat — with this
 assistant, a different LLM, or any capable assistant — to resume MACE
@@ -30,11 +32,21 @@ and to any LLM assistant working the project, not just one specific one.
 
 ## Active milestone
 - v2: PINNED (2026-09-27) — all three validation targets complete.
-- v2.1: polish bucket, next up, starting 2026-10-01.
+- v2.1: polish bucket, in progress since 2026-10-01/02.
+  - get_long_help() fix: DONE, live-validated 2026-10-02.
+  - mace_patch_mem: DONE, live-validated 2026-10-02.
+  - Per-platform connect automation: Android Layer 1
+    (scripts/android_device_prep.sh, device-side prep) DONE and
+    live-validated 2026-10-02. Still open: mace_connect_android
+    (Layer 2, the lldb-side sequence) and both iOS layers.
 - v2.5: EEA/Collatz work, planned after CB's 2026-10-12 return.
 
-CB is unavailable for MACE work after 2026-09-27 until approximately
-October 12 (surgery recovery) — EXCEPT October 1-4, which are open.
+CB is unavailable for MACE work after today until approximately
+October 12 (surgery recovery) — EXCEPT October 3-4, which are open.
+Planned for that window: finish v2.1 connect automation (Sat), then
+either N4TIVE install/validation on the Pixel 10a or the iOS
+heap-annotation test fixture (Sun, leaning N4TIVE — see BACKLOG.md's
+2026-10-02 entries).
 
 ## Validated targets (v2, complete — see ROADMAP.md Priority 1)
 - Frida-0x8 — mace_patch register flip, live syscall annotation.
@@ -46,11 +58,16 @@ October 12 (surgery recovery) — EXCEPT October 1-4, which are open.
   scratch Unity 6.3 LTS build -> Doppelglower Il2CppDumper fork ->
   RVA-based lldb breakpoint -> register read via MACE panel ->
   memory write patch -> confirmed VISIBLE on-device effect (cube
-  stopped spinning). The strongest of the three validations.
+  stopped spinning). Re-validated 2026-10-02 via the new
+  mace_patch_mem command against the same live process/address,
+  same visible effect.
 
 ## Known-good debugger recipes (copy-paste, always current)
 Full detail and troubleshooting: docs/android-setup.md,
-docs/ios-setup.md. This is the fast path.
+docs/ios-setup.md. This is the fast path. For Android, prefer
+`scripts/android_device_prep.sh` over the manual lldb-server steps
+below — it does the same thing with stale-process cleanup and
+forward-registration verification built in.
 
 Known-good host (confirmed 2026-09-25, Frida-0x8 session): Homebrew
 lldb 23.1.1. Not re-verified during the 2026-09-27 Unity/IL2CPP
@@ -76,13 +93,21 @@ auto-load doesn't run. Do not use that mode for normal MACE operation
 ### Android
 Platform mode + `su` is the only workflow currently proven working in
 the MACE Pixel 10a / Android 16 test environment (not a universal
-claim about lldb-server on Android generally):
+claim about lldb-server on Android generally). Automated form:
+`scripts/android_device_prep.sh [port] [local_lldb_server_path]`.
+Manual form:
 
     adb push lldb-server /data/local/tmp/lldb-server
     adb shell chmod 755 /data/local/tmp/lldb-server
     adb shell "su -c 'ps -A | grep lldb-server'"   # kill any stale PIDs first
-    adb shell "su -c '/data/local/tmp/lldb-server platform --listen 0.0.0.0:10500 --server &'"
+    adb shell "su -c '/data/local/tmp/lldb-server platform --listen 0.0.0.0:10500 --server >/dev/null 2>&1 &'"
     adb forward tcp:10500 tcp:10500
+
+Note the `>/dev/null 2>&1` before the trailing `&` on the lldb-server
+launch line — required, not optional. Without it, `adb shell` blocks
+waiting on the backgrounded process's still-open stdout/stderr pipe,
+which looks exactly like a hang (confirmed live 2026-10-02: the
+server had actually started fine, adb shell just never returned).
 
     lldb
     (lldb) platform select remote-android
@@ -128,25 +153,36 @@ wrong or outdated as advice today. Do not re-derive or re-try these:
   "RVA" — lldb's `breakpoint set --shlib <lib> --address <addr>`
   needs the RVA. Using Offset silently produces an unresolved
   "pending" breakpoint with no error.
-- `mace_patch` is register-only (SBValue API) — it does NOT write
-  arbitrary memory addresses. Use lldb's own `memory write` for that
-  today (a dedicated `mace_patch_mem` command is planned — see v2.1
-  bucket below).
+- `mace_patch` is register-only (SBValue API) and does NOT write
+  arbitrary memory addresses — SUPERSEDED as a limitation 2026-10-02:
+  use the new `mace_patch_mem <address> <size> <value>` command for
+  memory writes (same guardrail/audit-trail pattern as mace_patch),
+  not lldb's raw `memory write`.
+- `adb shell "su -c '... &'"` without redirecting the backgrounded
+  process's output appears to hang — it doesn't, lldb-server/the
+  process actually started; adb shell is just blocked on the open
+  pipe. Always redirect (`>/dev/null 2>&1`) before the trailing `&`.
+  Found and fixed 2026-10-02.
 
 ## Immediate next work — v2.1 polish bucket
-See BACKLOG.md's "v2.1 polish bucket (2026-09-27)" section for full
-detail. In rough order of effort:
-1. Fix `get_long_help()` missing on all 7 class-based MACE commands in
-   src/mace/lldb/stop_hook.py (mechanical, low-risk, high payoff —
-   docstrings already exist, just aren't wired up).
-2. `mace_patch_mem` — a memory-write patch command mirroring
-   `mace_patch`'s guardrails (stopped-process check, read-back
-   confirmation, shared audit trail with a kind: register/memory tag).
-3. Per-platform connect automation — a device-prep shell script +
-   a single `mace_connect_ios`/`mace_connect_android` lldb command
-   per platform (NOT unified — see BACKLOG.md's 2026-09-14 "who
-   performs the attach" entry for why). Would encode the recipes
-   above into one command each.
+See BACKLOG.md's "v2.1 polish bucket (2026-09-27)" section (and its
+2026-10-02 UPDATE notes) for full detail.
+1. ~~Fix get_long_help() missing on all 7 class-based MACE commands~~
+   DONE 2026-10-02 — inspect.cleandoc(self.__doc__) added to all 7,
+   live-validated via `help mace_patch`.
+2. ~~mace_patch_mem~~ DONE 2026-10-02 — built, live-validated against
+   SpinCube (patched rotationSpeed via SBProcess API, confirmed via
+   history log and the cube visibly stopping on-device).
+3. Per-platform connect automation — IN PROGRESS.
+   - Android Layer 1 (scripts/android_device_prep.sh): DONE and
+     live-validated 2026-10-02.
+   - Android Layer 2 (`mace_connect_android <package>` lldb command,
+     wrapping platform select/settings/signal passthrough/Activity
+     resolution/attach into one call): NOT STARTED — planned next
+     session (Oct 3).
+   - iOS Layer 1 (device-prep shell script) and Layer 2
+     (`mace_connect_ios <ip>`): NOT STARTED — planned next session
+     (Oct 3), after Android Layer 2.
 4. (optional, after 1-3) BayatGames/RedRunner — open-source Unity
    game as a richer IL2CPP validation target than the SpinCube test
    app. See BACKLOG.md's 2026-09-27 entry.
@@ -155,11 +191,25 @@ detail. In rough order of effort:
    assessment" — call-chain context, breakpoint status panel,
    register grouping.
 
+## After v2.1 closes (planned Oct 4)
+Pick one of (see BACKLOG.md's 2026-10-02 research-roundup entries for
+full detail on both):
+- N4TIVE (github.com/0xCD4/N4TIVE) install + validation on the
+  Pixel 10a — primary lean, concrete and bounded for a single day.
+- iOS heap-annotation test fixture build (tiered design already
+  logged) — larger, more open-ended, foundational for the heap
+  pointer annotation feature.
+Also logged, not yet scoped: watched registers (WATCH_REGS = [0, 1]
+in stop_hook.py) are hardcoded, not configurable — see BACKLOG.md's
+2026-10-02 entry for three architecture options under consideration.
+
 ## Key reference docs (read these instead of re-deriving from scratch)
 - docs/android-setup.md — full Android lldb-server/connect sequence,
   troubleshooting for every gotcha in the recipe above
 - docs/ios-setup.md — equivalent for iOS/debugserver
 - docs/debugging-playbook.md — accumulated RE technique/judgment rules
+- scripts/android_device_prep.sh — automated Android device-prep
+  (Layer 1 of connect automation; see v2.1 status above)
 - ROADMAP.md — current priority sequencing (superseded conclusions
   are explicitly tagged inline, not just here)
 - BACKLOG.md — parked research threads, feasibility assessments,
@@ -167,7 +217,7 @@ detail. In rough order of effort:
 
 Known gap: README.md is stale relative to this file (still describes
 Android as "not attempted yet" and MACE as v1) — worth a documentation
-pass eventually, not blocking, flagged 2026-09-27.
+pass eventually, not blocking, flagged 2026-09-27, still deferred.
 
 ## Repo
 github.com/cb90999/MACE

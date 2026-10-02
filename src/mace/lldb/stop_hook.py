@@ -7,6 +7,7 @@ import lldb
 import sys
 import re
 import time
+import inspect
 
 from mace.lldb.lldb_session import snapshot_from_frame, _get_breakpoint_id
 from mace.display.context_panel import render_panel, Color
@@ -118,6 +119,9 @@ class MACESwiftLoad:
     def get_short_help(self):
         return "Load Swift type context from a local binary path"
 
+    def get_long_help(self):
+        return inspect.cleandoc(self.__doc__)
+
 
 class MACEPatch:
     """
@@ -211,6 +215,9 @@ class MACEPatch:
     def get_short_help(self):
         return "Patch a register via SBValue API; records to mace_patch_history"
 
+    def get_long_help(self):
+        return inspect.cleandoc(self.__doc__)
+
 
 class MACEPatchHistory:
     """
@@ -245,6 +252,9 @@ class MACEPatchHistory:
 
     def get_short_help(self):
         return "Show (or clear) the mace_patch audit trail for this session"
+
+    def get_long_help(self):
+        return inspect.cleandoc(self.__doc__)
 
 
 class MACEGrep:
@@ -315,6 +325,9 @@ class MACEGrep:
 
     def get_short_help(self):
         return "Run an lldb command, show only lines matching a pattern"
+
+    def get_long_help(self):
+        return inspect.cleandoc(self.__doc__)
 
 
 class MACESearch:
@@ -409,6 +422,9 @@ class MACESearch:
 
     def get_short_help(self):
         return "Search all recorded stops this session for an address or annotation string"
+
+    def get_long_help(self):
+        return inspect.cleandoc(self.__doc__)
 
 
 class MACEHwBreak:
@@ -535,6 +551,9 @@ class MACEHwBreak:
     def get_short_help(self):
         return "Set a hardware breakpoint (CPU debug register, no memory write); records to mace_hw_break_history"
 
+    def get_long_help(self):
+        return inspect.cleandoc(self.__doc__)
+
 
 class MACEHwBreakHistory:
     """
@@ -576,3 +595,7 @@ class MACEHwBreakHistory:
 
     def get_short_help(self):
         return "Show (or clear) the mace_hw_break audit trail for this session"
+
+    def get_long_help(self):
+        return inspect.cleandoc(self.__doc__)
+

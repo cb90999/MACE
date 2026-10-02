@@ -1379,6 +1379,16 @@ command guessing which kind of target it was given). Mirror
     added to each record, rather than a second parallel history to
     remember to check -- one audit trail, not two.
 
+UPDATE 2026-10-02: built and live-validated. Mirrors mace_patch's
+guardrails via SBProcess.ReadMemory/WriteMemory instead of SBValue;
+adds mace_patch_mem_history following mace_patch_history's pattern.
+Validated on the Pixel 10a against the live SpinCube process:
+patched rotationSpeed (this + 0x20) from 0x42b40000 to 0x0 via
+`mace_patch_mem 0x7DCF079A70 4 0`, confirmed via history log, help
+text, and the cube visibly stopping on-device -- same effect as the
+original raw `memory write` validation, now through a dedicated MACE
+command.
+
 ## Class-based MACE commands never implement get_long_help() -- detailed help never reaches the user (2026-09-27)
 Source: CB architecture discussion ("better help for each of mace's
 tools"); root cause found via direct source inspection this session
@@ -1407,6 +1417,12 @@ classes above. The content already exists and is already good --
 this just wires it up. Good candidate to knock out early in the
 v2.1 bucket precisely because it's cheap and fixes a real, surprising
 gap rather than adding new surface area.
+
+UPDATE 2026-10-02: fixed. Added get_long_help() to all 7 class-based
+commands (inspect.cleandoc(self.__doc__), reusing the existing
+docstring rather than duplicating it). Verified live via `help
+mace_patch` showing the full usage/examples text instead of just the
+short-help line.
 
 ## Automate the full connect sequence per platform, not as one unified script (2026-09-27)
 Source: CB architecture discussion; grounded in the existing

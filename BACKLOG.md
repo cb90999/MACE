@@ -1464,6 +1464,20 @@ mangle, the wrong guessed Activity class name, and forgetting the
 signal passthrough were all manual-sequence mistakes a scripted,
 proven command would not make. See docs/android-setup.md and
 docs/ios-setup.md for the exact sequences to encode.
+UPDATE (2026-10-03): Both platform commands built and live-validated.
+Android: scripts/android_device_prep.sh (Layer 1) + mace_connect_android
+<package> [<port>] (Layer 2) -- the latter also resolves the Activity
+name, launches, finds the PID, and attaches automatically. Validated
+against Frida-0x8. iOS: CB opted to keep Layer 1 manual (SSH in, start
+sshd, launch debugserver) since it's already simpler than Android's and
+he wants to catch on-device issues directly rather than script around
+them. Built mace_connect_ios <ip> [<port>] for Layer 2 -- platform select
+remote-ios + process connect (NOT platform connect -- iOS's debugserver
+already attaches server-side at launch, so process connect both connects
+and creates/attaches the target in one step; the first draft used
+platform connect and failed with "invalid target" until this was
+corrected). Validated against MASTG UnCrackable Level 1. This closes the
+item and the full v2.1 polish bucket (3/3 done).
 ## README.md is stale relative to actual v2 status (2026-09-27)
 Source: flagged during HANDOFF.md external review
 

@@ -97,6 +97,7 @@ def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand("command script add -c stop_hook.MACEHwBreak mace_hw_break")
     debugger.HandleCommand("command script add -c stop_hook.MACEHwBreakHistory mace_hw_break_history")
     debugger.HandleCommand("command script add -c stop_hook.MACEConnectAndroid mace_connect_android")
+    debugger.HandleCommand("command script add -c stop_hook.MACEConnectIos mace_connect_ios")
     print("[MACE] Loaded. Use 'mace_on' after setting breakpoints to enable.")
 
 class MACESwiftLoad:
@@ -913,6 +914,87 @@ class MACEConnectAndroid:
 
     def get_short_help(self):
         return "Run the full Android connect sequence (platform select through process attach) in one command"
+
+    def get_long_help(self):
+        return inspect.cleandoc(self.__doc__)
+
+
+
+class MACEConnectIos:
+    """
+    mace_connect_ios <ip> [<port>] — run the iOS connect sequence in
+    one command: platform select remote-ios, then platform connect to
+    a debugserver that is already listening on the device. Mirrors
+    the manual sequence documented in docs/ios-setup.md.
+
+    Unlike mace_connect_android, this does NOT prep or launch anything
+    on the device -- you must already have debugserver running there
+    and attached to the target process (SSH in, start sshd if needed,
+    `ps aux | grep <AppName>` for the PID, then
+    `debugserver 0.0.0.0:<port> --attach=<pid>`). That stays a manual,
+    on-device step.
+
+    Does NOT run mace_on -- that stays a separate, deliberate step
+    after a successful connect.
+
+    <port> defaults to 1234 (project standard, matches debugserver's
+    default in docs/ios-setup.md).
+
+    Examples:
+      mace_connect_ios 192.168.1.42
+      mace_connect_ios 192.168.1.42 1234
+    """
+
+    def __init__(self, debugger, internal_dict):
+        pass
+
+    def __call__(self, debugger, command, exe_ctx, result, internal_dict=None):
+        parts = command.strip().split()
+        if not parts or len(parts) > 2:
+            result.AppendMessage("[MACE] Usage: mace_connect_ios <ip> [<port>]")
+            result.AppendMessage("[MACE]   e.g. mace_connect_ios 192.168.1.42")
+            return
+
+        ip = parts[0]
+        port = parts[1] if len(parts) == 2 else "1234"
+        try:
+            int(port)
+        except ValueError:
+            result.AppendMessage(f"[MACE] Could not parse '{port}' as a port number.")
+            return
+
+        interpreter = debugger.GetCommandInterpreter()
+
+        def run_lldb(cmd):
+            res = lldb.SBCommandReturnObject()
+            interpreter.HandleCommand(cmd, res)
+            return res
+
+        result.AppendMessage("[MACE] platform select remote-ios...")
+        r = run_lldb("platform select remote-ios")
+        if not r.Succeeded():
+            result.AppendMessage(f"[MACE] platform select failed: {(r.GetError() or '').strip() or '(no output)'}")
+            return
+
+        result.AppendMessage(f"[MACE] platform connect connect://{ip}:{port}...")
+        r = run_lldb(f"platform connect connect://{ip}:{port}")
+        connect_output = (r.GetOutput() or "").strip()
+        if connect_output:
+            result.AppendMessage(connect_output)
+        if not r.Succeeded():
+            result.AppendMessage(
+                f"[MACE] platform connect failed: {(r.GetError() or '').strip() or '(no output)'}"
+            )
+            result.AppendMessage(
+                "[MACE]   Is debugserver running on the device and attached to the target? "
+                "SSH in and check with: ps aux | grep debugserver"
+            )
+            return
+
+        result.AppendMessage(f"[MACE] Connected to {ip}:{port}. Run mace_on to enable the context panel.")
+
+    def get_short_help(self):
+        return "Run the iOS connect sequence (platform select through platform connect) in one command"
 
     def get_long_help(self):
         return inspect.cleandoc(self.__doc__)

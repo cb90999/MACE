@@ -1,11 +1,12 @@
 # MACE — Session Handoff
 
-Last updated: 2026-10-02
+Last updated: 2026-10-03
 Repo branch: main
-Validated through: Unity/IL2CPP SpinCube (third validation target);
-mace_patch_mem live-validated against the same target
-Current milestone: v2 pinned; v2.1 in progress (2 of 3 items done,
-3rd half done — see below)
+Validated through: mace_connect_ios (iOS Layer 2) against MASTG
+UnCrackable Level 1; mace_connect_android against Frida-0x8
+Current milestone: v2.1 CLOSED (3/3 items done). v2.5 EEA/Collatz
+source materials committed; Cursor porting handoff written; next
+step is Cursor's own work, outside this chat.
 
 Paste or attach this file at the start of a new chat — with this
 assistant, a different LLM, or any capable assistant — to resume MACE
@@ -32,35 +33,64 @@ and to any LLM assistant working the project, not just one specific one.
 
 ## Active milestone
 - v2: PINNED (2026-09-27) — all three validation targets complete.
-- v2.1: polish bucket, in progress since 2026-10-01/02.
-  - get_long_help() fix: DONE, live-validated 2026-10-02.
-  - mace_patch_mem: DONE, live-validated 2026-10-02.
-  - Per-platform connect automation: Android Layer 1
-    (scripts/android_device_prep.sh, device-side prep) DONE and
-    live-validated 2026-10-02. Still open: mace_connect_android
-    (Layer 2, the lldb-side sequence) and both iOS layers.
-- v2.5: EEA/Collatz work, planned after CB's 2026-10-12 return.
+- v2.1: CLOSED (2026-10-03) — all three polish items done and
+  live-validated.
+  - get_long_help() fix: DONE 2026-10-02.
+  - mace_patch_mem: DONE 2026-10-02.
+  - Per-platform connect automation: DONE 2026-10-03. Android:
+    scripts/android_device_prep.sh (Layer 1) + mace_connect_android
+    <package> [<port>] (Layer 2), validated against Frida-0x8. iOS:
+    Layer 1 kept manual (CB's deliberate choice — simpler than
+    Android's, and he wants to catch on-device issues directly) +
+    mace_connect_ios <ip> [<port>] (Layer 2), validated against
+    MASTG UnCrackable Level 1. See BACKLOG.md's 2026-10-03 UPDATE for
+    full detail, including the platform connect -> process connect
+    fix needed mid-validation.
+- v2.5: EEA/Collatz dual-platform syscall-annotation target.
+  Decided and committed 2026-10-03:
+  - Source materials (targets/src/collatz_eea_v2.s,
+    collatz_eea_v2_helpers.c) extracted from CB's uploaded writeup,
+    compiled and run as a live correctness check, committed.
+  - CONFIRMED real design flaw, not a MACE issue: the dual XOR
+    accumulator's claimed collision resistance is false (effectively
+    byte-wide state, XOR is commutative and linear) — a random
+    search found colliding inputs in under a second. DECISION: not
+    fixing it. The vulnerability itself becomes the MACE demo's
+    teaching point (realistic time-pressured-shipping scenario).
+  - DECISION: this is NOT being run as an actual CTF. Scope is MACE
+    validation only.
+  - Privacy: the instructor answer key and the specific colliding
+    inputs are NOT committed to this public repo — source code only,
+    per CB's explicit instruction.
+  - Porting handoff written: docs/collatz-eea-v2-porting-notes.md,
+    for Cursor (a separate tool, not this chat) to build the actual
+    iOS and Android app wrappers. CB's explicit requirements: Android
+    must be native code via JNI (not a Kotlin/Java reimplementation
+    of the check logic), and the collision bug must be preserved on
+    both platforms, not fixed.
+  - NOT YET DONE: Cursor's actual porting work. That happens outside
+    this chat, on CB's own schedule.
 
 CB is unavailable for MACE work after today until approximately
-October 12 (surgery recovery) — EXCEPT October 3-4, which are open.
-Planned for that window:
-- Saturday Oct 3, two sessions:
-  - Session 1: finish v2.1 connect automation — mace_connect_android
-    (Layer 2), then iOS device-prep script + mace_connect_ios
-    (Layer 1+2). Closes the full v2.1 bucket.
-  - Session 2: N4TIVE (github.com/0xCD4/N4TIVE) install + validation
-    on the Pixel 10a — confirm it exercises Scudo, rerun the
-    anti-debug bypass, start on the heap-exploitation challenge.
-- Sunday Oct 4, one session only (CB prepping for hospital stay that
-  day): EEA/Collatz review and v2.5 planning. CB brings the source
-  code, answer key, and the transcript of how Opus solved it; review
-  cold and build a concrete, sequenced v2.5 plan -- not yet
-  scoped/decided as of 2026-10-02, deliberately deferred until the
-  actual material is reviewed rather than guessed at. Should also
-  decide where the N4TIVE/CTF material (post-GA validation work,
-  see BACKLOG.md's 2026-10-02 entries) fits relative to this --
-  likely a separate bucket from EEA/Collatz, not the same thing, but
-  confirm explicitly during this session rather than assuming.
+October 12 (surgery recovery). Plan changed 2026-10-03 morning: CB
+compressed everything into a single Saturday session rather than the
+previously planned "2 Saturday sessions + 1 Sunday session" — Sunday
+Oct 4 is now reserved entirely for hospital-stay prep, no MACE work.
+Today's order, as actually executed:
+1. EEA/Collatz review and v2.5 decisions (DONE — see above).
+2. Finish v2.1 connect automation (DONE — see above).
+3. If time remains: N4TIVE (github.com/0xCD4/N4TIVE) install +
+   validation on the Pixel 10a — confirm it exercises Scudo, rerun
+   the anti-debug bypass, start on the heap-exploitation challenge.
+   See BACKLOG.md's 2026-10-02 "Post-GA Android heap/anti-debug/JNI
+   validation candidates" entry. This was explicitly the most
+   skippable item in today's order — if today ends before reaching
+   it, it carries over to October 12+ with no re-planning needed.
+
+Also logged, not yet scoped (no session currently allocated — revisit
+October 12+): watched registers (WATCH_REGS = [0, 1] in
+stop_hook.py) are hardcoded, not configurable — see BACKLOG.md's
+2026-10-02 entry for three architecture options under consideration.
 
 ## Validated targets (v2, complete — see ROADMAP.md Priority 1)
 - Frida-0x8 — mace_patch register flip, live syscall annotation.
@@ -78,10 +108,10 @@ Planned for that window:
 
 ## Known-good debugger recipes (copy-paste, always current)
 Full detail and troubleshooting: docs/android-setup.md,
-docs/ios-setup.md. This is the fast path. For Android, prefer
-`scripts/android_device_prep.sh` over the manual lldb-server steps
-below — it does the same thing with stale-process cleanup and
-forward-registration verification built in.
+docs/ios-setup.md. This is the fast path — prefer the one-command
+forms (mace_connect_android, mace_connect_ios) over the manual
+sequences below; the manual sequences remain here for
+troubleshooting when a one-command form fails partway.
 
 Known-good host (confirmed 2026-09-25, Frida-0x8 session): Homebrew
 lldb 23.1.1. Not re-verified during the 2026-09-27 Unity/IL2CPP
@@ -96,7 +126,8 @@ Known-good Android server toolchain: extracted from Android NDK r27d
 NDK's own clang/lldb toolchain version 18, not a standalone
 lldb-server release version.
 Device baseline: Pixel 10a, Android 16 / API 36, arm64-v8a, Magisk
-root.
+root. iOS baseline: iPad 7th Gen, A10, iOS 18.7.2, palera1n
+semi-tethered jailbreak.
 
 When validating LLDB itself independently of MACE (e.g. isolating
 whether a problem is MACE's stop-hook logic or lldb's own behavior),
@@ -105,23 +136,19 @@ auto-load doesn't run. Do not use that mode for normal MACE operation
 -- only when intentionally testing vanilla lldb.
 
 ### Android
-Platform mode + `su` is the only workflow currently proven working in
-the MACE Pixel 10a / Android 16 test environment (not a universal
-claim about lldb-server on Android generally). Automated form:
-`scripts/android_device_prep.sh [port] [local_lldb_server_path]`.
-Manual form:
+Layer 1 (device-side prep, no lldb dependency):
+`scripts/android_device_prep.sh [port] [local_lldb_server_path]` --
+kills stale lldb-server processes, pushes/launches it in platform
+mode, sets up the adb forward, all idempotently.
 
-    adb push lldb-server /data/local/tmp/lldb-server
-    adb shell chmod 755 /data/local/tmp/lldb-server
-    adb shell "su -c 'ps -A | grep lldb-server'"   # kill any stale PIDs first
-    adb shell "su -c '/data/local/tmp/lldb-server platform --listen 0.0.0.0:10500 --server >/dev/null 2>&1 &'"
-    adb forward tcp:10500 tcp:10500
+Layer 2 (one lldb command for the full client-side sequence):
 
-Note the `>/dev/null 2>&1` before the trailing `&` on the lldb-server
-launch line — required, not optional. Without it, `adb shell` blocks
-waiting on the backgrounded process's still-open stdout/stderr pipe,
-which looks exactly like a hang (confirmed live 2026-10-02: the
-server had actually started fine, adb shell just never returned).
+    lldb
+    (lldb) mace_connect_android <package> [<port>]
+    (lldb) mace_on
+
+Manual form (for troubleshooting only — mace_connect_android wraps
+all of this):
 
     lldb
     (lldb) platform select remote-android
@@ -129,7 +156,7 @@ server had actually started fine, adb shell just never returned).
     (lldb) settings set target.parallel-module-load false
     (lldb) process handle SIGSEGV -n false -p true -s false
     (lldb) process handle SIGBUS -n false -p true -s false
-    (lldb) platform connect connect://localhost:10500
+    (lldb) platform connect connect://localhost:<port>
 
     adb shell cmd package resolve-activity --brief <pkg>
     adb shell am start -n <pkg>/<ActivityName>
@@ -138,14 +165,36 @@ server had actually started fine, adb shell just never returned).
     (lldb) mace_on
 
 ### iOS
+Layer 1 (device-prep) stays manual — CB's deliberate choice, since
+it's already simple and he wants to catch on-device issues directly:
+
     ssh root@<ipad-ip>
     /var/jb/usr/sbin/sshd
+    export PATH="/var/jb/usr/lib/llvm-16/bin:$PATH"
+    ps aux | grep <AppName>
     debugserver 0.0.0.0:1234 --attach=<PID>
+
+Layer 2 (one lldb command for the client-side sequence):
+
+    lldb
+    (lldb) mace_connect_ios <ip> [<port>]
+    (lldb) mace_on
+
+Manual form (for troubleshooting only):
 
     lldb
     (lldb) platform select remote-ios
     (lldb) process connect connect://<ip>:1234
     (lldb) mace_on
+
+Note: iOS uses `process connect`, NOT `platform connect` — debugserver
+already attaches server-side at launch, so process connect both
+connects and creates/attaches the target in one step. This is the
+opposite of Android, where platform connect alone does not attach
+(process attach --pid does the real work afterward). Mixing these up
+was the one bug found while building mace_connect_ios (2026-10-03):
+platform connect returned success but left no target, producing
+"invalid target, create a target using the 'target create' command."
 
 ## Superseded — do NOT follow these as current guidance
 Preserved as investigation history in ROADMAP.md/BACKLOG.md, but
@@ -177,60 +226,41 @@ wrong or outdated as advice today. Do not re-derive or re-try these:
   process actually started; adb shell is just blocked on the open
   pipe. Always redirect (`>/dev/null 2>&1`) before the trailing `&`.
   Found and fixed 2026-10-02.
+- Using `platform connect` for iOS (mirroring the Android recipe) —
+  SUPERSEDED 2026-10-03, never shipped beyond local testing. Use
+  `process connect` for iOS; see the iOS recipe note above for why.
 
-## Immediate next work — v2.1 polish bucket
-See BACKLOG.md's "v2.1 polish bucket (2026-09-27)" section (and its
-2026-10-02 UPDATE notes) for full detail.
-1. ~~Fix get_long_help() missing on all 7 class-based MACE commands~~
-   DONE 2026-10-02 — inspect.cleandoc(self.__doc__) added to all 7,
-   live-validated via `help mace_patch`.
-2. ~~mace_patch_mem~~ DONE 2026-10-02 — built, live-validated against
-   SpinCube (patched rotationSpeed via SBProcess API, confirmed via
-   history log and the cube visibly stopping on-device).
-3. Per-platform connect automation — IN PROGRESS.
-   - Android Layer 1 (scripts/android_device_prep.sh): DONE and
-     live-validated 2026-10-02.
-   - Android Layer 2 (`mace_connect_android <package>` lldb command,
-     wrapping platform select/settings/signal passthrough/Activity
-     resolution/attach into one call): NOT STARTED — planned next
-     session (Oct 3).
-   - iOS Layer 1 (device-prep shell script) and Layer 2
-     (`mace_connect_ios <ip>`): NOT STARTED — planned next session
-     (Oct 3), after Android Layer 2.
-4. (optional, after 1-3) BayatGames/RedRunner — open-source Unity
-   game as a richer IL2CPP validation target than the SpinCube test
-   app. See BACKLOG.md's 2026-09-27 entry.
-5. (optional, already sequenced into 1-3 where applicable) remaining
-   items from BACKLOG.md's "External GUI recommendations feasibility
-   assessment" — call-chain context, breakpoint status panel,
-   register grouping.
+## Immediate next work
+v2.1 is closed. Next, time permitting today (2026-10-03):
+1. N4TIVE (github.com/0xCD4/N4TIVE) install + validation on the
+   Pixel 10a. See BACKLOG.md's 2026-10-02 "Post-GA Android
+   heap/anti-debug/JNI validation candidates" entry for full detail.
+   If today ends before this is reached, it carries over to
+   October 12+ with no re-planning needed.
 
-## After v2.1 closes (planned Oct 3, Session 2)
-N4TIVE (github.com/0xCD4/N4TIVE) install + validation on the
-Pixel 10a -- see BACKLOG.md's 2026-10-02 "Post-GA Android
-heap/anti-debug/JNI validation candidates" entry for full detail.
-
-## Oct 4 — EEA/Collatz review and v2.5 planning (one session only)
-Not yet scoped. CB to bring: Collatz source code, answer key, and
-the transcript/output of how Opus solved it. Review cold before
-proposing architecture (e.g. whether this becomes an iOS/Android
-validation app, a case study for the v3 AI layer, or something
-else) -- deliberately not guessed at ahead of seeing the actual
-material. Output should be a concrete, sequenced plan specific
-enough to survive the Oct 12+ gap without CB having to re-explain
-context in a fresh chat.
-
-Also logged, not yet scoped: watched registers (WATCH_REGS = [0, 1]
-in stop_hook.py) are hardcoded, not configurable -- see BACKLOG.md's
-2026-10-02 entry for three architecture options under consideration.
+Deferred, no session currently allocated:
+- BayatGames/RedRunner — open-source Unity game as a richer IL2CPP
+  validation target than the SpinCube test app. See BACKLOG.md's
+  2026-09-27 entry.
+- Remaining items from BACKLOG.md's "External GUI recommendations
+  feasibility assessment" — call-chain context, breakpoint status
+  panel, register grouping.
+- Configurable watched registers (WATCH_REGS hardcoded) — see
+  BACKLOG.md's 2026-10-02 entry.
+- Cursor's actual iOS/Android porting work on collatz_eea_v2 — see
+  v2.5 status above and docs/collatz-eea-v2-porting-notes.md. Happens
+  outside this chat.
 
 ## Key reference docs (read these instead of re-deriving from scratch)
 - docs/android-setup.md — full Android lldb-server/connect sequence,
   troubleshooting for every gotcha in the recipe above
 - docs/ios-setup.md — equivalent for iOS/debugserver
 - docs/debugging-playbook.md — accumulated RE technique/judgment rules
+- docs/collatz-eea-v2-porting-notes.md — v2.5 handoff spec for Cursor
 - scripts/android_device_prep.sh — automated Android device-prep
-  (Layer 1 of connect automation; see v2.1 status above)
+  (Layer 1 of connect automation)
+- targets/src/collatz_eea_v2.s, collatz_eea_v2_helpers.c — v2.5
+  source materials (macOS-native; iOS/Android ports not yet built)
 - ROADMAP.md — current priority sequencing (superseded conclusions
   are explicitly tagged inline, not just here)
 - BACKLOG.md — parked research threads, feasibility assessments,

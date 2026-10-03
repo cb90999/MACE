@@ -923,9 +923,11 @@ class MACEConnectAndroid:
 class MACEConnectIos:
     """
     mace_connect_ios <ip> [<port>] — run the iOS connect sequence in
-    one command: platform select remote-ios, then platform connect to
-    a debugserver that is already listening on the device. Mirrors
-    the manual sequence documented in docs/ios-setup.md.
+    one command: platform select remote-ios, then process connect to
+    a debugserver that is already listening on the device. process
+    connect both connects and attaches in one step here, since
+    debugserver already attached server-side when it was launched.
+    Mirrors the manual sequence documented in docs/ios-setup.md.
 
     Unlike mace_connect_android, this does NOT prep or launch anything
     on the device -- you must already have debugserver running there
@@ -976,14 +978,14 @@ class MACEConnectIos:
             result.AppendMessage(f"[MACE] platform select failed: {(r.GetError() or '').strip() or '(no output)'}")
             return
 
-        result.AppendMessage(f"[MACE] platform connect connect://{ip}:{port}...")
-        r = run_lldb(f"platform connect connect://{ip}:{port}")
+        result.AppendMessage(f"[MACE] process connect connect://{ip}:{port}...")
+        r = run_lldb(f"process connect connect://{ip}:{port}")
         connect_output = (r.GetOutput() or "").strip()
         if connect_output:
             result.AppendMessage(connect_output)
         if not r.Succeeded():
             result.AppendMessage(
-                f"[MACE] platform connect failed: {(r.GetError() or '').strip() or '(no output)'}"
+                f"[MACE] process connect failed: {(r.GetError() or '').strip() or '(no output)'}"
             )
             result.AppendMessage(
                 "[MACE]   Is debugserver running on the device and attached to the target? "
@@ -994,7 +996,7 @@ class MACEConnectIos:
         result.AppendMessage(f"[MACE] Connected to {ip}:{port}. Run mace_on to enable the context panel.")
 
     def get_short_help(self):
-        return "Run the iOS connect sequence (platform select through platform connect) in one command"
+        return "Run the iOS connect sequence (platform select through process connect) in one command"
 
     def get_long_help(self):
         return inspect.cleandoc(self.__doc__)

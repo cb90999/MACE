@@ -9,6 +9,7 @@ import re
 import time
 import inspect
 import struct
+import subprocess
 
 from mace.lldb.lldb_session import snapshot_from_frame, _get_breakpoint_id
 from mace.display.context_panel import render_panel, Color
@@ -95,6 +96,7 @@ def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand("command script add -c stop_hook.MACESearch mace_search")
     debugger.HandleCommand("command script add -c stop_hook.MACEHwBreak mace_hw_break")
     debugger.HandleCommand("command script add -c stop_hook.MACEHwBreakHistory mace_hw_break_history")
+    debugger.HandleCommand("command script add -c stop_hook.MACEConnectAndroid mace_connect_android")
     print("[MACE] Loaded. Use 'mace_on' after setting breakpoints to enable.")
 
 class MACESwiftLoad:
@@ -771,3 +773,146 @@ class MACEHwBreakHistory:
     def get_long_help(self):
         return inspect.cleandoc(self.__doc__)
 
+
+
+class MACEConnectAndroid:
+    """
+    mace_connect_android <package> [<port>] — run the full proven
+    Android connect sequence in one command: platform select, package
+    settings, parallel-module-load off, SIGSEGV/SIGBUS passthrough,
+    platform connect, resolving the real Activity name via `adb shell
+    cmd package resolve-activity --brief`, launching it, finding the
+    PID, and process attach. Mirrors the manual sequence documented in
+    docs/android-setup.md.
+
+    Does NOT start lldb-server on the device -- run
+    scripts/android_device_prep.sh first. Does NOT run mace_on --
+    that stays a separate, deliberate step after a successful attach.
+
+    <port> defaults to 10500 (project standard).
+
+    Examples:
+      mace_connect_android com.ad2001.frida0x8
+      mace_connect_android com.UnityTechnologies.com.unity.template.urpblank 10500
+    """
+
+    def __init__(self, debugger, internal_dict):
+        pass
+
+    def __call__(self, debugger, command, exe_ctx, result, internal_dict=None):
+        parts = command.strip().split()
+        if not parts or len(parts) > 2:
+            result.AppendMessage("[MACE] Usage: mace_connect_android <package> [<port>]")
+            result.AppendMessage("[MACE]   e.g. mace_connect_android com.ad2001.frida0x8")
+            return
+
+        package = parts[0]
+        port = parts[1] if len(parts) == 2 else "10500"
+        try:
+            int(port)
+        except ValueError:
+            result.AppendMessage(f"[MACE] Could not parse '{port}' as a port number.")
+            return
+
+        interpreter = debugger.GetCommandInterpreter()
+
+        def run_lldb(cmd):
+            res = lldb.SBCommandReturnObject()
+            interpreter.HandleCommand(cmd, res)
+            return res
+
+        result.AppendMessage("[MACE] platform select remote-android...")
+        r = run_lldb("platform select remote-android")
+        if not r.Succeeded():
+            result.AppendMessage(f"[MACE] platform select failed: {(r.GetError() or '').strip() or '(no output)'}")
+            return
+
+        run_lldb(f"settings set platform.plugin.remote-android.package-name {package}")
+        run_lldb("settings set target.parallel-module-load false")
+        run_lldb("process handle SIGSEGV -n false -p true -s false")
+        run_lldb("process handle SIGBUS -n false -p true -s false")
+
+        result.AppendMessage(f"[MACE] platform connect connect://localhost:{port}...")
+        r = run_lldb(f"platform connect connect://localhost:{port}")
+        if not r.Succeeded():
+            result.AppendMessage(
+                f"[MACE] platform connect failed: {(r.GetError() or '').strip() or '(no output)'}"
+            )
+            result.AppendMessage(
+                "[MACE]   Is lldb-server running and forwarded? "
+                "Run scripts/android_device_prep.sh first."
+            )
+            return
+        connect_output = (r.GetOutput() or "").strip()
+        if connect_output:
+            result.AppendMessage(connect_output)
+
+        result.AppendMessage(f"[MACE] Resolving Activity for {package}...")
+        try:
+            resolve_out = subprocess.run(
+                ["adb", "shell", "cmd", "package", "resolve-activity", "--brief", package],
+                capture_output=True, text=True, timeout=15,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            result.AppendMessage(f"[MACE] Could not run adb: {e}")
+            return
+
+        activity = None
+        for line in resolve_out.stdout.splitlines():
+            line = line.strip()
+            if line.startswith(package + "/"):
+                activity = line
+                break
+        if not activity:
+            result.AppendMessage(
+                f"[MACE] Could not resolve an Activity for {package}. Raw output:\n"
+                f"{resolve_out.stdout.strip() or '(empty)'}"
+            )
+            result.AppendMessage(
+                "[MACE]   Is the package actually installed? "
+                "Check with: adb shell pm list packages | grep <name>"
+            )
+            return
+
+        result.AppendMessage(f"[MACE] Resolved: {activity}")
+        result.AppendMessage("[MACE] Launching...")
+        start_out = subprocess.run(
+            ["adb", "shell", "am", "start", "-n", activity],
+            capture_output=True, text=True, timeout=15,
+        )
+        if "Error" in start_out.stdout or "Exception" in start_out.stdout:
+            result.AppendMessage(f"[MACE] am start reported an error:\n{start_out.stdout.strip()}")
+            return
+
+        result.AppendMessage("[MACE] Finding PID...")
+        pid = None
+        for attempt in range(5):
+            pid_out = subprocess.run(
+                ["adb", "shell", "pidof", package],
+                capture_output=True, text=True, timeout=10,
+            )
+            pid = pid_out.stdout.strip()
+            if pid:
+                break
+            time.sleep(1)
+
+        if not pid:
+            result.AppendMessage(f"[MACE] Could not find a PID for {package} after launch.")
+            return
+
+        result.AppendMessage(f"[MACE] PID {pid}, attaching...")
+        r = run_lldb(f"process attach --pid {pid}")
+        attach_output = (r.GetOutput() or "").strip()
+        if attach_output:
+            result.AppendMessage(attach_output)
+        if not r.Succeeded():
+            result.AppendMessage(f"[MACE] process attach failed: {(r.GetError() or '').strip() or '(no output)'}")
+            return
+
+        result.AppendMessage(f"[MACE] Attached to {package} (pid {pid}). Run mace_on to enable the context panel.")
+
+    def get_short_help(self):
+        return "Run the full Android connect sequence (platform select through process attach) in one command"
+
+    def get_long_help(self):
+        return inspect.cleandoc(self.__doc__)

@@ -349,6 +349,47 @@ wrapper calls visible). Not yet wrapped in an APK or IPA; plan is to
 have Cursor build both an iOS and an Android native wrapper around the
 existing binary once v2's reliability work is settled.
 
+UPDATE 2026-10-03: source materials finalized. collatz_eea_v2.s
+(ARM64 assembly, custom SVC-dispatch obfuscation) plus
+collatz_eea_v2_helpers.c (Frida detection via a real connect() to
+127.0.0.1:27042, SIGSYS handler + dispatch table hiding PRIME/both
+magic values/success-failure strings behind svc #0x10-#0x15) now
+committed to targets/src/. Confirmed Darwin/macOS-native as built
+(Mach-O sections, _main leading-underscore symbol, SIGSYS handler
+relies on macOS's ucontext_t layout -- uc_mcontext->__ss.__pc /
+__ss.__x[0]) -- compiled and smoke-tested live 2026-10-03 (clang
+-arch arm64, correctly denied a wrong-length input).
+
+Also surfaced during review (answer key and full analysis kept
+private, not in this repo): the design's collision-resistance claim
+does not hold. Both accumulators (x20, x26) are effectively byte-wide
+(col+eea tops out at 124; the x26 term is reduced mod 0xFF), giving
+at most 2^16 possible passing outcomes against 36^32 possible 32-char
+inputs. A random search found three other accepted inputs in under a
+second. Root cause is deeper than accumulator width -- XOR is
+commutative (any rearrangement of the intended flag still passes, and
+any two identical characters cancel) and linear (solvable via linear
+algebra, not brute force, even at larger widths).
+
+DECISION 2026-10-03: not being used as an actual CTF at this time, so
+the collision weakness does NOT need fixing for MACE's purposes --
+v2.5's validation goal is syscall/register observation on a hardened
+target, not flag-uniqueness grading. Deliberately PRESERVED, not
+patched: MACE walking through live register/syscall observation on
+this target, including surfacing the dual-accumulator collision
+weakness itself, doubles as a demo of what collision-resistant check
+design looks like under real shipping deadline pressure -- a
+legitimate secondary narrative alongside the primary syscall-
+annotation stress test.
+
+Next: Cursor to build the iOS and Android native wrappers (Android
+specifically as native code via JNI, not a Kotlin/Java
+reimplementation of the verification logic -- preserves the real
+adversarial-target conditions this binary is meant to stress-test).
+Full porting spec, including the Darwin-vs-Linux ucontext_t/Mach-O-
+vs-ELF differences this needs to account for: see
+docs/collatz-eea-v2-porting-notes.md.
+
 ## v3 — AI + MCP (NowSecure demo target)
 - MCP server — mace_get_register_context, mace_set_breakpoint,
   mace_read_memory, mace_get_backtrace, mace_step_instruction

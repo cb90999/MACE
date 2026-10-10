@@ -823,7 +823,24 @@ this specific target category.
 Widevine/Shaka Player interaction specifically (the other half of the
 streaming-app target, DRM rather than games) has been discussed but
 not yet researched with the same rigor -- worth a dedicated pass
-before treating it as equally validated.
+before treating it as equally validated. Scoped specifically to
+Android, not iOS -- confirmed 2026-10-10 against a real, concrete
+counter-example (a third-party Rust macOS client found streaming HBO
+Max, analyzed as an internal security matter, unrelated to MACE
+validation itself). That client's FairPlay integration
+(MaxFairPlayKeyDelegate/AVContentKeySession against Apple's real FPS
+pipeline) routes content keys through Apple's hardware-backed
+protected path, never exposing them to the app's own process memory
+-- the same protection boundary MACE would hit on any correctly-
+implemented FairPlay target, iOS included. Widevine has the
+equivalent hardware-backed tier (L1), but also a software-only tier
+(L3) used on devices without TEE support, where content keys DO exist
+in the app's own process memory during decryption -- exactly where
+MACE's register/memory inspection has a real shot. Real pre-req
+before picking a validation target: confirm a specific device/app
+combination that actually negotiates L3, since an app can request L1
+and a capable device grants it even on an older OS -- device
+capability, not app choice alone, decides which tier gets used.
 
 ### Rationale
 Frida and MACE cannot coexist on iOS 18.7.2 (proven Aug 1 2026).

@@ -1700,6 +1700,39 @@ find, not a revisit of either of these. N4TIVE remains worth
 installing for its other two backlog-relevant challenges (Anti-Debug
 Gauntlet, Type Confusion), just not as heap-annotation validation.
 
+UPDATE (2026-10-19, same day): N4TIVE's Anti-Debug Gauntlet challenge
+(ch04, package com.ctf.nativectf, built via Android Studio/Gradle,
+installed on the Pixel 10a) run end-to-end this session -- all 7
+anti-analysis checks (TracerPid, Frida /proc/self/maps scan, ptrace
+self-attach, timing, self-BRK-scan, Java debugger, APK signature)
+bypassed, and the flag-verification gate itself (a real HMAC-SHA256
+constant-time compare, not a simple boolean) also patched to accept
+submitted input regardless of the real digest. Real finding worth
+logging precisely: this was NOT run through MACE's own tool surface
+-- raw lldb `breakpoint command add` + `register write` throughout,
+not `mace_patch`. Two genuine lldb gotchas surfaced that mace_patch's
+SBValue-based write + automatic readback + audit trail (stop_hook.py)
+would likely have caught faster: (1) a `breakpoint command add`
+multi-line entry silently stored a literal leading `>` in the command
+text, twice, failing only at execution time (`error: Aborting reading
+of commands...`) with no indication at entry time -- `breakpoint
+command list <id>` displayed the broken text correctly both times,
+but reading it as "just formatting" rather than "literal stored
+content" cost real debugging time before the run-time error exposed
+it. (2) `check_breakpoints` scans its own .text for the BRK opcode;
+confirmed via direct `memory read` that lldb's breakpoints on this
+target are NOT software BRK patches, so the false-positive scan hits
+came from legitimate compiler-emitted bytes coincidentally matching
+the scan mask, not from lldb's own breakpoints -- useful confirmation
+that this breakpoint mechanism doesn't self-sabotage an integrity
+scan the way a naive software-breakpoint implementation would. Anti-
+Debug Gauntlet is defeated, but NOT yet validated as a MACE capability
+demonstration specifically -- worth a rerun through mace_patch/
+mace_set_breakpoint directly, both to get the capability demonstration
+on record the way Frida-0x8/libantifrida.so/Unity were, and to test
+whether mace_patch's audit trail surfaces gotcha (1) above faster than
+raw lldb did.
+
 ## Watched registers are hardcoded, not configurable (2026-10-02)
 Source: CB observation, end-of-session 2026-10-02
 

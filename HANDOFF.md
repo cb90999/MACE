@@ -1,12 +1,15 @@
 # MACE — Session Handoff
 
-Last updated: 2026-10-03
+Last updated: 2026-10-19
 Repo branch: main
-Validated through: mace_connect_ios (iOS Layer 2) against MASTG
-UnCrackable Level 1; mace_connect_android against Frida-0x8
-Current milestone: v2.1 CLOSED (3/3 items done). v2.5 EEA/Collatz
-source materials committed; Cursor porting handoff written; next
-step is Cursor's own work, outside this chat.
+Validated through: N4TIVE's Anti-Debug Gauntlet challenge (ch04,
+com.ctf.nativectf) defeated end-to-end on the Pixel 10a — 7 checks +
+HMAC flag bypass — but via raw lldb, NOT yet through mace_patch.
+Current milestone: v2.1 CLOSED. Scudo heap-validation candidates
+(N4TIVE ch05, MobileHackingLab) both closed as dead ends — neither
+uses Scudo. N4TIVE's Anti-Debug Gauntlet run today as a non-MACE
+validation pass; rerunning it through mace_patch/mace_set_breakpoint
+directly is the next real step.
 
 Paste or attach this file at the start of a new chat — with this
 assistant, a different LLM, or any capable assistant — to resume MACE
@@ -34,63 +37,59 @@ and to any LLM assistant working the project, not just one specific one.
 ## Active milestone
 - v2: PINNED (2026-09-27) — all three validation targets complete.
 - v2.1: CLOSED (2026-10-03) — all three polish items done and
-  live-validated.
-  - get_long_help() fix: DONE 2026-10-02.
-  - mace_patch_mem: DONE 2026-10-02.
-  - Per-platform connect automation: DONE 2026-10-03. Android:
-    scripts/android_device_prep.sh (Layer 1) + mace_connect_android
-    <package> [<port>] (Layer 2), validated against Frida-0x8. iOS:
-    Layer 1 kept manual (CB's deliberate choice — simpler than
-    Android's, and he wants to catch on-device issues directly) +
-    mace_connect_ios <ip> [<port>] (Layer 2), validated against
-    MASTG UnCrackable Level 1. See BACKLOG.md's 2026-10-03 UPDATE for
-    full detail, including the platform connect -> process connect
-    fix needed mid-validation.
-- v2.5: EEA/Collatz dual-platform syscall-annotation target.
-  Decided and committed 2026-10-03:
-  - Source materials (targets/src/collatz_eea_v2.s,
-    collatz_eea_v2_helpers.c) extracted from CB's uploaded writeup,
-    compiled and run as a live correctness check, committed.
-  - CONFIRMED real design flaw, not a MACE issue: the dual XOR
-    accumulator's claimed collision resistance is false (effectively
-    byte-wide state, XOR is commutative and linear) — a random
-    search found colliding inputs in under a second. DECISION: not
-    fixing it. The vulnerability itself becomes the MACE demo's
-    teaching point (realistic time-pressured-shipping scenario).
-  - DECISION: this is NOT being run as an actual CTF. Scope is MACE
-    validation only.
-  - Privacy: the instructor answer key and the specific colliding
-    inputs are NOT committed to this public repo — source code only,
-    per CB's explicit instruction.
-  - Porting handoff written: docs/collatz-eea-v2-porting-notes.md,
-    for Cursor (a separate tool, not this chat) to build the actual
-    iOS and Android app wrappers. CB's explicit requirements: Android
-    must be native code via JNI (not a Kotlin/Java reimplementation
-    of the check logic), and the collision bug must be preserved on
-    both platforms, not fixed.
-  - NOT YET DONE: Cursor's actual porting work. That happens outside
-    this chat, on CB's own schedule.
+  live-validated (get_long_help() fix, mace_patch_mem, per-platform
+  connect automation).
+- v2.5: EEA/Collatz dual-platform syscall-annotation target. Source
+  materials committed 2026-10-03; porting handoff written for Cursor
+  (docs/collatz-eea-v2-porting-notes.md). Cursor's actual iOS/Android
+  porting work NOT YET DONE — happens outside this chat, on CB's own
+  schedule, no date currently set.
+- Scudo heap-validation candidates: CLOSED as dead ends (2026-10-19).
+  N4TIVE's Heap Feng Shui challenge (ch05) uses a custom 8-slot slab
+  allocator, not Scudo. The MobileHackingLab candidate uses jemalloc,
+  same allocator already ruled out via CENSUS/shadow. No current
+  candidate target for Scudo validation — stays open, needs a
+  genuinely new find. See BACKLOG.md's "Post-GA Android heap/anti-
+  debug/JNI validation candidates" entry for full detail.
+- N4TIVE Anti-Debug Gauntlet (ch04): defeated end-to-end 2026-10-19 —
+  all 7 checks (TracerPid, Frida /proc/self/maps, ptrace self-attach,
+  timing, self-BRK-scan, Java debugger, APK signature) plus the
+  HMAC-SHA256 flag-verification gate itself, all bypassed via register
+  patches at each check's branch-decision point. Real caveat: this was
+  run with raw lldb (`breakpoint command add` + `register write`), NOT
+  through mace_patch/mace_set_breakpoint — so it's a defeated CTF
+  challenge, not yet a MACE capability demonstration on the record the
+  way Frida-0x8/libantifrida.so/Unity are. Two genuine lldb gotchas
+  found along the way that mace_patch's audit trail would likely catch
+  faster next time — full detail in BACKLOG.md's dated 2026-10-19
+  update to the Post-GA candidates entry.
 
-CB is unavailable for MACE work after today until approximately
-October 12 (surgery recovery). Plan changed 2026-10-03 morning: CB
-compressed everything into a single Saturday session rather than the
-previously planned "2 Saturday sessions + 1 Sunday session" — Sunday
-Oct 4 is now reserved entirely for hospital-stay prep, no MACE work.
-Today's order, as actually executed:
-1. EEA/Collatz review and v2.5 decisions (DONE — see above).
-2. Finish v2.1 connect automation (DONE — see above).
-3. If time remains: N4TIVE (github.com/0xCD4/N4TIVE) install +
-   validation on the Pixel 10a — confirm it exercises Scudo, rerun
-   the anti-debug bypass, start on the heap-exploitation challenge.
-   See BACKLOG.md's 2026-10-02 "Post-GA Android heap/anti-debug/JNI
-   validation candidates" entry. This was explicitly the most
-   skippable item in today's order — if today ends before reaching
-   it, it carries over to October 12+ with no re-planning needed.
+## Immediate next work
+1. Rerun N4TIVE's Anti-Debug Gauntlet (ch04) through mace_patch and
+   mace_set_breakpoint directly, rather than raw lldb — gets the
+   capability demonstration on record the way the other three
+   validated targets are, and tests whether mace_patch's audit trail
+   surfaces the two lldb gotchas (broken multi-line breakpoint
+   commands, the check_breakpoints false-positive scan) faster than
+   raw lldb did. See BACKLOG.md's 2026-10-19 update for full detail on
+   both.
+2. N4TIVE's Type Confusion challenge — still open, not yet attempted.
 
-Also logged, not yet scoped (no session currently allocated — revisit
-October 12+): watched registers (WATCH_REGS = [0, 1] in
-stop_hook.py) are hardcoded, not configurable — see BACKLOG.md's
-2026-10-02 entry for three architecture options under consideration.
+Deferred, no session currently allocated:
+- N4TIVE's remaining challenges not already covered (XOR decryption,
+  buffer overflow, custom stack-based VM) — not yet scoped as
+  backlog-relevant the way Anti-Debug Gauntlet/Type Confusion are.
+- BayatGames/RedRunner — open-source Unity game as a richer IL2CPP
+  validation target than the SpinCube test app. See BACKLOG.md's
+  2026-09-27 entry.
+- Remaining items from BACKLOG.md's "External GUI recommendations
+  feasibility assessment" — call-chain context, breakpoint status
+  panel, register grouping.
+- Configurable watched registers (WATCH_REGS hardcoded) — see
+  BACKLOG.md's 2026-10-02 entry.
+- Cursor's actual iOS/Android porting work on collatz_eea_v2 — see
+  v2.5 status above and docs/collatz-eea-v2-porting-notes.md. Happens
+  outside this chat.
 
 ## Validated targets (v2, complete — see ROADMAP.md Priority 1)
 - Frida-0x8 — mace_patch register flip, live syscall annotation.
@@ -229,27 +228,16 @@ wrong or outdated as advice today. Do not re-derive or re-try these:
 - Using `platform connect` for iOS (mirroring the Android recipe) —
   SUPERSEDED 2026-10-03, never shipped beyond local testing. Use
   `process connect` for iOS; see the iOS recipe note above for why.
-
-## Immediate next work
-v2.1 is closed. Next, time permitting today (2026-10-03):
-1. N4TIVE (github.com/0xCD4/N4TIVE) install + validation on the
-   Pixel 10a. See BACKLOG.md's 2026-10-02 "Post-GA Android
-   heap/anti-debug/JNI validation candidates" entry for full detail.
-   If today ends before this is reached, it carries over to
-   October 12+ with no re-planning needed.
-
-Deferred, no session currently allocated:
-- BayatGames/RedRunner — open-source Unity game as a richer IL2CPP
-  validation target than the SpinCube test app. See BACKLOG.md's
-  2026-09-27 entry.
-- Remaining items from BACKLOG.md's "External GUI recommendations
-  feasibility assessment" — call-chain context, breakpoint status
-  panel, register grouping.
-- Configurable watched registers (WATCH_REGS hardcoded) — see
-  BACKLOG.md's 2026-10-02 entry.
-- Cursor's actual iOS/Android porting work on collatz_eea_v2 — see
-  v2.5 status above and docs/collatz-eea-v2-porting-notes.md. Happens
-  outside this chat.
+- A `breakpoint command add` multi-line entry can silently store a
+  literal leading `>` as part of the command text if the entry gets
+  interrupted/misreads — SURFACED 2026-10-19 during the N4TIVE
+  Anti-Debug Gauntlet session (raw lldb, not mace_patch). `breakpoint
+  command list <id>` displays the broken text correctly, which reads
+  as "just formatting" rather than the literal stored content it
+  actually is — only caught at execution time via `error: Aborting
+  reading of commands...`. Prefer `breakpoint command add -o "<cmd>"`
+  (single-line form) to sidestep the multi-line entry path entirely.
+  See BACKLOG.md's 2026-10-19 update for full detail.
 
 ## Key reference docs (read these instead of re-deriving from scratch)
 - docs/android-setup.md — full Android lldb-server/connect sequence,

@@ -652,6 +652,92 @@ the references above:
    of human-in-the-loop than approve/deny on one action -- this is the
    human choosing WHICH KIND of engagement comes next.
 
+
+**Quarkslab vulnerability-research workflow** (blog.quarkslab.com,
+research log, 2026-10-08) -- real production methodology, not a
+toy demo: a deterministic core (graph -> recon -> slicing -> static
+taint/pattern analysis -> triage -> PoC-under-ASan -> chain -> exploit)
+tuned deliberately for RECALL, over-producing candidates on purpose,
+with an agent layer that then filters for precision. Three patterns
+worth citing for v3, none already covered above:
+1. The core/agent split itself is a cleaner framing than anything
+   currently in the v3 tool list above, which is flat -- every
+   mace_get_register_context/mace_set_breakpoint call is equally
+   "agent decides." Splitting MACE's own future pipeline the same way
+   (a deterministic layer that over-produces candidate stops/syscall
+   hits/register deltas, an agent layer that triages which are worth
+   surfacing) gives the confidence-cascade cost-routing work above a
+   concrete architecture, not just a cost optimization -- also a
+   noise-reduction one.
+2. Their "slicing" stage (never let an agent reason over the whole
+   codebase -- narrow to one hypothesis/entry point first) is exactly
+   what the RE-brief handoff pattern below already does by necessity:
+   an RVA, a register set, an expected value, never the whole binary.
+3. Evidence attached to every finding, including REJECTED ones, not
+   just a pass/fail verdict -- their triage stage discards a
+   plausible-looking path because a protocol length field bounded it
+   safely, and keeps that reasoning. Directly extends the KVM-escape
+   skeptical-reviewer pattern above: the reviewer's rejection reason
+   should be logged, not discarded, so a human or later agent can
+   audit why.
+Also worth adopting as a stated design principle, not just a
+technical pattern: the authors name RESEARCHER ATTENTION, not
+compute, as the actual bottleneck the whole workflow protects --
+useful framing for the NowSecure pitch ("protects the analyst's
+attention" reads better than "agent does RE"). One real gap: the
+article names no MCP usage and no cross-session memory handling, so
+there's nothing to borrow on state-persistence or tool-protocol
+specifics -- that part of v3's design stays ours to work out.
+
+**Claude Code advisor tool** (code.claude.com/docs/en/advisor,
+research log, 2026-10-08) -- Claude Code feature, not a v3 component
+itself (v3's MCP server exposes lldb tools to whatever agent connects
+to it; the advisor is specific to Claude Code as the agent). The
+underlying PATTERN is the relevant part: a stronger model consulted
+at decision points -- before committing to an approach, when stuck on
+a recurring error, before declaring a task done -- with the main
+model staying in control throughout. Gives v3 a third routing axis
+alongside the two already logged: cost routing (llmfit/DSPy above,
+escalate when a cheap model is unsure) and role routing (KVM-escape
+skeptical reviewers above, a second model checks a proposed
+patch/annotation before surfacing it). This is decision-POINT
+escalation specifically, distinct from both. Two real limits, not
+just caveats: the model decides when to consult with no way to force
+or cap calls, so it can't be a safety gate for state-mutating tools
+(the idamcp-style human-approval step has to stay the real check
+regardless); and it's cloud-only, sending the full transcript each
+call -- in MACE's case that transcript would include live register/
+memory dumps from a target app, a data-handling question before any
+demo use, not just a cost one. Concretely useful today for building
+MACE itself (e.g. a Sonnet main + Opus advisor for hard design calls
+like the heap-annotation work) rather than as a v3 architecture
+input -- log as "watch, don't depend on," since it's explicitly
+experimental and may change.
+
+**REA (Reverse Engineer Anything)** (github.com/morluto/rea,
+research log, 2026-10-19) -- competitive-landscape confirmation, not
+a design input. An open-source MCP glue layer connecting RE tools
+(Ghidra, IDA, Hopper, JEB, and others) to an AI agent -- squarely the
+static-analysis layer already scoped out of the NowSecure demo below,
+confirming that scoping rather than changing it. Also added Frida
+instrumentation (PR #1359, merged 2026-10-12) and a separate LLDB
+observe tool (PR #964, merged 2026-10-08), which looked initially
+like it might overlap MACE's actual layer -- checked both in detail
+and they don't: the Frida work has no memory/register read-write and
+no tracing yet (explicitly deferred in the originating feature
+request, #968), verified only on Linux/Windows x64, with macOS/
+Android/iOS/ARM64 all unverified. The LLDB tool is launch-only (no
+attach to an existing/already-running process), read-only (no
+expression evaluation, no register/memory writes), no remote
+debugging (no lldb-server/debugserver support at all), macOS-only,
+verified on local native processes only. Neither does what MACE's
+actual architecture requires -- remote attach to an already-running
+process on a real mobile device via debugserver/lldb-server, plus
+register/memory writes (mace_patch/mace_patch_mem). Useful as a
+positioning data point: the live mobile-ARM64-attach-and-patch space
+MACE occupies is still genuinely open as of this writing, not a
+reason to change course.
+
 ## objc_msgSend Annotation Design
 
 Problem: global objc_msgSend breakpoint fires thousands of times per second,
@@ -974,3 +1060,33 @@ investigation, escalating from one to the other on its own, rather
 than a human having to manually realize "I should go read source now"
 after getting stuck. A concrete, vivid illustration for this item,
 worth more than an abstract architecture pitch alone.
+
+
+## NowSecure Demo Scope: Static RE Out of Scope (decision, 2026-10-08)
+Static RE already has well-served agentic MCP tooling -- JEB/Hopper
+integration above, plus ida-pro-mcp/idamcp and REA (both in v3 Design
+References above) -- so the demo doesn't need to showcase MACE doing
+static analysis. DECISION: state plainly that RE was done offline and
+show its OUTPUT (functions/RVAs, registers to watch, expected values)
+as the input MACE's MCP consumes, matching the existing "static tool
+hands off a concrete RVA, MACE never needs named-symbol resolution"
+workflow already described above for JEB. Keeps the demo focused on
+the actual differentiator: MACE, its MCP, and the agentic workflow
+around it -- not a JEB/Ghidra/Hopper re-demo.
+
+Two things needed to keep this from reading as a staged script:
+1. Show the RE-brief handoff itself on screen (the RVAs/registers/
+   expected-values document the agent receives), not just the live
+   MACE session -- demonstrates the MCP taking real static-analysis
+   output as input, a strength, not a gap to hide.
+2. Include at least one moment where the agent adapts rather than
+   just replaying the brief -- a register value that surprises it,
+   triggering its own choice of next breakpoint -- with the human
+   approval gate staying on any actual patch. A pure replay of a
+   pre-written brief looks like a macro, not an agent.
+State plainly that the RE was done offline, not by MACE -- matches
+the existing framing in docs/ios-setup.md that anti-debug bypass is
+external target-preparation infrastructure, not a MACE capability.
+The collatz_eea_v2 target (v2.5 above) fits this shape well: the RE
+brief is the SVC dispatch table and the two accumulators, and MACE's
+runtime walk-through is what exposes the collision live.

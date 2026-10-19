@@ -1685,6 +1685,20 @@ not a validation target.
 All three explicitly scoped as post-GA work, not v2.1 or v2.5 --
 heap annotation needs the iOS fixture to prove the mechanism first.
 
+UPDATE (2026-10-19): Both primary and secondary candidates confirmed
+NOT Scudo, closing this entry's original purpose. N4TIVE's Heap Feng
+Shui challenge (ch05) uses a custom 8-slot slab allocator built into
+the app itself (off-by-16 overflow into neighboring slot metadata +
+UAF to hijack a function pointer) -- bespoke CTF scaffolding, not
+Android's system allocator, confirmed by reading the actual challenge
+breakdown before touching hardware. The MobileHackingLab secondary
+candidate (CB checked the APK directly, 2026-10-19) uses jemalloc --
+same allocator already ruled out via CENSUS/shadow above (superseded
+by Scudo as the hardened default since Android 11). Scudo validation
+has NO current candidate target -- stays open, needs a genuinely new
+find, not a revisit of either of these. N4TIVE remains worth
+installing for its other two backlog-relevant challenges (Anti-Debug
+Gauntlet, Type Confusion), just not as heap-annotation validation.
 
 ## Watched registers are hardcoded, not configurable (2026-10-02)
 Source: CB observation, end-of-session 2026-10-02

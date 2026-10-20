@@ -1909,11 +1909,11 @@ binary actually supports to a SOLVED state.
 ### New MACE-relevant technique: direct native function-call injection
 Used lldb's `expr` evaluator to call arbitrary functions in the live
 inferior directly, without needing the app to call them itself:
-
+```
 (lldb) expr -- (void*)malloc(64)
-(lldb) expr -- ((void()(const unsigned char, char*))0x6f4acf2f24)((const unsigned char*)&expected_bytes, (char*)0x<buf>)
+(lldb) expr -- ((void(*)(const unsigned char*, char*))0x6f4acf2f24)((const unsigned char*)&expected_bytes, (char*)0x<buf>)
 (lldb) expr -- (char*)0x<buf>
-
+```
 Useful for probing a suspected decoy/dead function's real behavior
 without needing to trigger it through the app's own control flow, or
 for testing candidate inputs against a one-way verifier (`verify_flag`)

@@ -1945,3 +1945,88 @@ two documented bugs (no `-i` flag — it's always case-insensitive by
 design; doesn't strip quotes/escapes from its pattern argument) by using
 single bare-word, unquoted patterns throughout. No new bugs found beyond
 the two already documented.
+
+## Design proposal: mace_set_breakpoint (v2 command, groundwork for v3 MCP tool) (2026-10-20)
+
+`mace_set_breakpoint` currently exists only as a bare name in ROADMAP's
+v3 MCP tool list, with no design notes or spec of its own, and no v2
+lldb-command equivalent. Today's N4TIVE ch04 Anti-Debug Gauntlet rerun
+(see this file's 2026-10-20 entry above) gave direct, repeated evidence
+of exactly the friction a real command would solve — worth capturing
+now while the pain points are fresh, as a concrete v2 spec this future
+MCP tool can wrap rather than designing the mechanism and the agentic
+surface simultaneously from scratch.
+
+### The friction, observed directly today
+Across all 7 ch04 checks plus the `verify_flag` gate, the same manual
+three-step sequence repeated dozens of times:
+```
+breakpoint set -a <addr>
+mace_patch <reg> <value>
+mace_patch_history (to confirm)
+```
+This is also exactly how the session's one real operator error happened
+(the `check_breakpoints` mis-patch, see 2026-10-20 entry above) — the
+set-location and the patch-value were specified as two separate manual
+steps, far enough apart in the command stream that the wrong value got
+typed against the wrong breakpoint. A single atomic command that takes
+both at once removes that window entirely.
+
+Also hit repeatedly: breakpoints set while the process is in the
+"running" state (not stopped) don't retroactively apply to code that's
+already executed past that point — the only fix today is noticing
+`process status` says "running," then re-triggering the entire
+app-level action from scratch. This is a confusing silent-failure mode
+with no current warning.
+
+### Proposed v2 syntax
+```
+mace_set_breakpoint <location> [--patch <reg> <value>] [--once] [--label <name>]
+```
+
+- `<location>` — address (`-a`) or symbol (`-n`), same semantics as
+  plain lldb `breakpoint set`.
+- `--patch <reg> <value>` — optional. The moment this breakpoint hits,
+  automatically applies `mace_patch <reg> <value>` before anything else
+  runs, folding set + patch into one atomic, fully audited action.
+- `--once` — optional. Auto-disables the breakpoint after its first
+  hit. Matches the common pattern from today's session (a check's
+  patch point only needs forcing once per app-level run, and leaving
+  it enabled across retriggers just adds noise to re-confirm each
+  time).
+- `--label <name>` — optional. Human-readable tag stored alongside the
+  breakpoint and shown in `mace_patch_history` and the context panel
+  in place of (or alongside) the raw numeric breakpoint ID. Doesn't
+  fix the malformed-ID display bug's root cause (see this file's and
+  HANDOFF.md's notes on the `-1`/`-4` signed/unsigned misread), but
+  sidesteps its practical impact for identification purposes.
+
+### mace_patch_history integration
+When `--patch` is used, the resulting history entry should record the
+set+patch as a single compound event — e.g.:
+```
+[N] HH:MM:SS bp-set+patch: w0 0x.. -> 0x.. at <addr> in <func> (breakpoint M.1, label='check_tracer_pid')
+```
+rather than two separate log lines. This directly closes the gap
+HANDOFF.md's original (now-corrected) wording was gesturing at — a
+compound, atomic event leaves no window for the kind of operator
+mis-patch that happened today.
+
+### Running-process warning
+`mace_set_breakpoint` should detect whether the process is currently
+running (not stopped) at the moment the breakpoint is set, and if so,
+emit an explicit warning — e.g. "breakpoint set, but process is
+currently running; if execution has already passed this address,
+retrigger the entry point to catch it" — rather than silently doing
+nothing, which was the confusing failure mode hit repeatedly today.
+
+### Relationship to the v3 MCP tool
+This v2 command gives the already-ROADMAP-listed v3 MCP tool
+`mace_set_breakpoint` a straightforward implementation target: the MCP
+tool becomes a thin wrapper (`mace_set_breakpoint(location, patch_reg?,
+patch_value?, once?)` → calls this same v2 lldb command). It remains
+subject to v3's already-planned opt-in gating and human-approval
+dashboard for state-mutating tools (see ROADMAP's `ida-pro-mcp`/
+`idamcp` design-reference entries) — this v2 command is the mechanism;
+the MCP wrapper is the agentic surface, and the gating applies at that
+layer, not here.

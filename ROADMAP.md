@@ -391,8 +391,10 @@ vs-ELF differences this needs to account for: see
 docs/collatz-eea-v2-porting-notes.md.
 
 ## v3 — AI + MCP (NowSecure demo target)
-- MCP server — mace_get_register_context, mace_set_breakpoint,
-  mace_read_memory, mace_get_backtrace, mace_step_instruction
+- MCP server — mace_get_register_context, mace_set_breakpoint (see
+  BACKLOG.md's 2026-10-20 design proposal for a concrete v2 command
+  spec this can wrap), mace_read_memory, mace_get_backtrace,
+  mace_step_instruction
 - DSPy routing — local/cloud hybrid
 - Telemetry opt-out by default
 - SSE server mode for remote debugging

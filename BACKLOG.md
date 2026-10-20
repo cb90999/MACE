@@ -1817,3 +1817,131 @@ approval process before using it on pre-prod/NDA'd releases;
 MACE-side evaluation (lab targets only -- Frida-Labs, DVIA-v2, N4TIVE,
 etc.) can proceed independently of that approval, which only gates
 production/pre-prod company targets.
+
+## N4TIVE ch04 "ANTI-DEBUG" Gauntlet — full MACE-audited solve (2026-10-20)
+
+Superseded the 2026-10-19 raw-lldb solve of this challenge with a fully
+MACE-tooling-audited run, per HANDOFF's "immediate next work" item. Also
+used this session to exercise `mace_grep` and MACE's other search
+commands against a live, on-demand-loaded native library.
+
+### Target
+- `com.ctf.nativectf`, ch04 "ANTI-DEBUG" challenge, `libch04_gauntlet.so`
+  (unstripped, full DWARF). Library only loads into the live process once
+  its challenge screen's "RUN ANTI-DEBUG CHECK" button is tapped — the
+  UI's displayed address for the challenge is a static label, not a live
+  runtime address.
+
+### Method
+Disassembled each of the 7 checks (`check_tracer_pid`, `check_frida`,
+`check_ptrace`, `check_timing`, `check_breakpoints`, `check_java_debugger`,
+`check_signature`), located the instruction immediately after each
+check's final load of its computed result into `w0` (before
+epilogue/`ret`), set a breakpoint there, and used `mace_patch w0 <val>`
+to force the "clean" expected byte when needed. Full chronological
+`mace_patch_history` audit trail kept throughout, including the one
+real operator error made this session (see below).
+
+Of the 7 checks, only 2 ever needed an actual forced value this session:
+- `check_tracer_pid` (`/proc/self/status` TracerPid) — always needed
+  patching, since lldb attach is itself a trace relationship.
+- `check_ptrace` (self-attach) — always needed patching, same reason.
+
+The other 5 (`check_frida`, `check_timing`, `check_breakpoints`,
+`check_java_debugger`, `check_signature`) consistently computed their
+own "clean" expected byte with no patch required — a real, repeatable
+signature of where MACE/lldb sits relative to each detection surface
+(below Frida's detection layer, undetected by the Java-level debugger
+check, undetected by APK-signature verification, and under the
+`check_breakpoints` BRK-opcode-scan tolerance threshold — see below).
+
+### `check_breakpoints` mechanism (new, documented)
+Scans the first 1024 bytes (256 instruction words) of its own code for
+the ARM64 `BRK` opcode bit pattern (masked compare against `0xd4200000`)
+and only fails if it finds more than 2 matches — i.e. up to 2 live lldb
+software breakpoints planted inside that specific range are tolerated.
+
+### The flag gate — the actual crux
+`expected_bytes[7]` assembled correctly (all 7 bytes patched/confirmed
+naturally correct, cross-verified directly against the binary's real
+`expected_bytes` global via `target variable expected_bytes`), but this
+does **not** reveal a usable flag string on its own. Two separate
+decoy/honeypot mechanisms were found and ruled out:
+
+- `derive_flag(key_bytes, out)` — builds `"FLAG{" + 42 XOR-decoded bytes
+  + "}"` using a classic LCG keystream (`a=1103515245, c=12345`) seeded
+  from the 7 key bytes. Produces a well-formed-looking but non-printable
+  `FLAG{...}` string. Called it directly via lldb's `expr` function-call
+  injection (new technique for MACE, see below) with the real
+  `expected_bytes` global as input — confirmed via a second direct call
+  to `verify_flag()` that this output is **not** the correct flag.
+- `Java_..._Ch04_getFlag(JNIEnv*, jobject, jobject context)` — a native
+  method exposed in the `Ch04` Java class but with **zero usages**
+  anywhere in the decompiled app (confirmed via jadx-gui usage search).
+  Internally recomputes all 7 checks fresh and, on full match, calls the
+  same `derive_flag` with the same inputs — mathematically guaranteed to
+  produce the identical wrong string. A second-tier honeypot aimed
+  specifically at reverse engineers who go past static analysis to call
+  into native code directly (i.e. exactly MACE's own use case).
+
+`verify_flag(challenge_id, input)` itself is a one-way
+`HMAC-SHA256(challenge_salts[id], input)` constant-time compare against
+a hardcoded `stored_digests[id][32]` — not reversible. No plaintext flag
+exists anywhere in the binary or the decompiled Java/Kotlin recoverable
+by any analysis performed this session.
+
+**Actual solve**: same technique as yesterday's raw-lldb run, now via
+`mace_patch`. Disassembled `verify_flag`, found the `cset w8, eq` result
+at `check_integrity`-adjacent offset `<+320>` get stored into the return
+slot at `<+324>` (`0x6f4acf3d34`), breakpointed there, and used
+`mace_patch w8 1` to force a "match" regardless of the real HMAC result.
+Input just needs to clear a `6 <= len <= 129` length check first — a
+short string like `"test"` silently fails this gate before ever reaching
+the patch site; `"testing"` (7 chars) clears it.
+
+The challenge's own UI copy — *"must all pass (or be bypassed)"* — reads
+as confirmation that this register-forcing approach is the intended
+solve path, not a workaround: `verify_flag`'s one-way HMAC construction
+means no legitimate reverse-engineering path can ever recover the real
+flag string, so bypassing the check's result is the only route the
+binary actually supports to a SOLVED state.
+
+### New MACE-relevant technique: direct native function-call injection
+Used lldb's `expr` evaluator to call arbitrary functions in the live
+inferior directly, without needing the app to call them itself:
+
+(lldb) expr -- (void*)malloc(64)
+(lldb) expr -- ((void()(const unsigned char, char*))0x6f4acf2f24)((const unsigned char*)&expected_bytes, (char*)0x<buf>)
+(lldb) expr -- (char*)0x<buf>
+
+Useful for probing a suspected decoy/dead function's real behavior
+without needing to trigger it through the app's own control flow, or
+for testing candidate inputs against a one-way verifier (`verify_flag`)
+directly. Requires `process interrupt` first if the process is running.
+Worth a proper MACE helper command (`mace_call`?) if this pattern recurs.
+
+### Confirmed bug reproductions (same classes as prior findings)
+- Malformed breakpoint ID display bug reproduced again, this time with
+  `-1` (`breakpoint 18446744073709551615.1` = 2^64-1): same signed/unsigned
+  misread class as the documented 2026-08-30 `-4` case.
+- `fork`-stop-reason (thread stopped inside `linker64`'s `ElfReader::Load`)
+  recurred twice this session; both times continued past safely with
+  only a benign `SIGCHLD` auto-stop-restart, no connection breakdown.
+
+### Operator-error / `mace_patch_history` audit-trail finding
+Mid-session, a consolidated multi-breakpoint instruction accidentally
+had the operator apply `check_timing`'s value (46) at `check_breakpoints`
+(which was actually already naturally correct at 247), corrupting that
+pass. `mace_patch_history`'s chronological record made the mistake
+immediately visible next to the surrounding pattern of correct values —
+directly answering HANDOFF's question of whether the audit trail
+surfaces operator mistakes faster than raw lldb would have. It does.
+
+### `mace_grep` / search tooling notes (as requested this session)
+Used extensively against `image dump symtab libch04_gauntlet.so` to
+resolve every check function, `verify_flag`, `derive_flag`,
+`check_integrity`, and `getFlag`'s addresses, working around `mace_grep`'s
+two documented bugs (no `-i` flag — it's always case-insensitive by
+design; doesn't strip quotes/escapes from its pattern argument) by using
+single bare-word, unquoted patterns throughout. No new bugs found beyond
+the two already documented.

@@ -4,12 +4,14 @@ Last updated: 2026-10-19
 Repo branch: main
 Validated through: N4TIVE's Anti-Debug Gauntlet challenge (ch04,
 com.ctf.nativectf) defeated end-to-end on the Pixel 10a — 7 checks +
-HMAC flag bypass — but via raw lldb, NOT yet through mace_patch.
+HMAC flag bypass — now through mace_patch, with a full mace_patch_history
+audit trail on record (2026-10-20 rerun superseding the 2026-10-19
+raw-lldb pass).
 Current milestone: v2.1 CLOSED. Scudo heap-validation candidates
 (N4TIVE ch05, MobileHackingLab) both closed as dead ends — neither
-uses Scudo. N4TIVE's Anti-Debug Gauntlet run today as a non-MACE
-validation pass; rerunning it through mace_patch/mace_set_breakpoint
-directly is the next real step.
+uses Scudo. N4TIVE's Anti-Debug Gauntlet is now a confirmed MACE
+capability demonstration; N4TIVE's Type Confusion challenge (still
+open, untried) is the next real step.
 
 Paste or attach this file at the start of a new chat — with this
 assistant, a different LLM, or any capable assistant — to resume MACE
@@ -55,25 +57,25 @@ and to any LLM assistant working the project, not just one specific one.
   all 7 checks (TracerPid, Frida /proc/self/maps, ptrace self-attach,
   timing, self-BRK-scan, Java debugger, APK signature) plus the
   HMAC-SHA256 flag-verification gate itself, all bypassed via register
-  patches at each check's branch-decision point. Real caveat: this was
-  run with raw lldb (`breakpoint command add` + `register write`), NOT
-  through mace_patch/mace_set_breakpoint — so it's a defeated CTF
-  challenge, not yet a MACE capability demonstration on the record the
-  way Frida-0x8/libantifrida.so/Unity are. Two genuine lldb gotchas
-  found along the way that mace_patch's audit trail would likely catch
-  faster next time — full detail in BACKLOG.md's dated 2026-10-19
-  update to the Post-GA candidates entry.
+  patches at each check's branch-decision point. This was originally
+  run with raw lldb (`breakpoint command add` + `register write`), not
+  yet a MACE capability demonstration on the record. UPDATE 2026-10-20:
+  fully reran through plain lldb `breakpoint set` + mace_patch instead
+  (there is no `mace_set_breakpoint` command — that name only exists in
+  ROADMAP's future v3 MCP tool list; the real mechanism is lldb's own
+  breakpoint-setting plus mace_patch for the register write), with a
+  full mace_patch_history audit trail — now a confirmed MACE capability
+  demonstration alongside Frida-0x8/libantifrida.so/Unity. Full detail,
+  including a double-decoy flag mechanism and a new direct
+  function-call-injection technique, in BACKLOG.md's dated 2026-10-20
+  entry.
 
 ## Immediate next work
-1. Rerun N4TIVE's Anti-Debug Gauntlet (ch04) through mace_patch and
-   mace_set_breakpoint directly, rather than raw lldb — gets the
-   capability demonstration on record the way the other three
-   validated targets are, and tests whether mace_patch's audit trail
-   surfaces the two lldb gotchas (broken multi-line breakpoint
-   commands, the check_breakpoints false-positive scan) faster than
-   raw lldb did. See BACKLOG.md's 2026-10-19 update for full detail on
-   both.
-2. N4TIVE's Type Confusion challenge — still open, not yet attempted.
+1. N4TIVE's Type Confusion challenge — still open, not yet attempted.
+   (Anti-Debug Gauntlet rerun through mace_patch is DONE as of
+   2026-10-20 — see BACKLOG.md's dated entry for full detail, including
+   the double-decoy flag mechanism and the direct function-call-
+   injection technique used to test it.)
 
 Deferred, no session currently allocated:
 - N4TIVE's remaining challenges not already covered (XOR decryption,

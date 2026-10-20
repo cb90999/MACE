@@ -1765,3 +1765,55 @@ is picked up:
 
 Leaning toward option 2 but not committed -- revisit with fresh eyes
 when this is actually picked up.
+
+## REA ("Reverse Engineer Anything") — candidate static-triage complement to MACE (2026-10-20)
+Source: github.com/morluto/rea, npm package rea-agents, discussed in chat
+
+Real, broad MCP server connecting an agent to local static-analysis
+tooling -- native binaries (Hopper/Ghidra/IDA-backed pseudocode,
+assembly, symbols, call references), Android APKs (JADX-backed
+decompile), IL2CPP metadata (built-in static decoding, versions 24,
+27, 29, 31, 39 -- no Unity install required), Flutter apps (Dart
+snapshot hash, per-ABI library digests, no Flutter install required),
+.NET assemblies, Go/Rust binaries, firmware, packet captures, and
+more. MIT licensed. Static only, explicitly -- no live AArch64
+register/debugger capability of its own. That's the right
+complement, not overlap: it fits the exact static-hands-off-an-offset
+pipeline this project already proved manually (IL2CppDumper's
+AddCoins example -> MACE address-based breakpoint, see v1 Target
+Sequencing/Target Market section in ROADMAP.md), just generalized
+across far more target formats than any single decompiler evaluated
+so far.
+
+Concrete potential win: REA's built-in IL2CPP/Flutter/Android-APK
+static decoding could remove a real chunk of the manual JEB/Ghidra
+offset-hunting workflow this project currently does by hand before
+ever setting a MACE address breakpoint -- worth validating directly
+against a real target once cleared for use (see below).
+
+Being evaluated as an MCP server an agent could hold in the same
+session as MACE's own future v3 MCP tools -- REA triages/names an
+offset of interest, the agent calls mace_set_breakpoint /
+mace_get_register_context directly on it. This is the same
+orchestration loop already gestured at via the ida-pro-mcp/idamcp/
+jdb-agentic-debugger references in ROADMAP's v3 Design References
+section, but REA covers substantially more static target formats than
+any one of those.
+
+Possible overlap to resolve, not duplicate, once actually evaluated:
+the android-reverse-engineering-skill candidate (v2 Design
+References, Android Static section) and the Dart/Flutter AArch64
+register-map research already in this file may be partly subsumed by
+REA's own Android APK/Flutter decoding -- decide whether REA replaces
+those research threads or sits alongside them once hands-on.
+
+Real caution before adopting, not yet resolved: this is a
+third-party, npx-installed MCP server that runs with the user's own
+permissions, including an ADB device-analysis tool and Linux/macOS
+process-capture via PTY -- warrants the same source/supply-chain
+review as any new dependency before pointing it at anything
+sensitive. CB is going through the company's internal tooling
+approval process before using it on pre-prod/NDA'd releases;
+MACE-side evaluation (lab targets only -- Frida-Labs, DVIA-v2, N4TIVE,
+etc.) can proceed independently of that approval, which only gates
+production/pre-prod company targets.

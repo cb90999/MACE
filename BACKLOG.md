@@ -2030,3 +2030,26 @@ dashboard for state-mutating tools (see ROADMAP's `ida-pro-mcp`/
 `idamcp` design-reference entries) — this v2 command is the mechanism;
 the MCP wrapper is the agentic surface, and the gating applies at that
 layer, not here.
+
+
+## REA + mace_set_breakpoint pipeline synthesis (2026-10-20)
+
+Ties together the REA evaluation entry and the mace_set_breakpoint design entry from earlier today. The natural shape of a REA-to-MACE pipeline: a REA static triage pass identifies candidate anti-tamper / anti-debug check functions (the generalizable pattern from the ch04 work done today -- a noinline function that computes a byte or boolean and returns early on a detected branch), and emits a list of address/register/expected_value tuples -- almost exactly the input shape the proposed mace_set_breakpoint --patch flag wants. That removes the manual disassembly-by-hand step for the common case: REA finds candidates, MACE consumes them directly with a full mace_patch_history audit trail, with no human disassembly needed in between.
+
+Also worth building into REA heuristics: the getFlag() finding from today (a native method with zero Java call sites, serving as a honeypot or decoy) suggests that a native method callable from Java but with no actual call sites anywhere in the decompiled app is a generalizable, automatable red flag REA could surface directly, rather than something that has to be discovered by hand via a jadx Find Usage search each time.
+
+Scoped as a future pipeline idea, not actionable until the company approval process for REA on NDA work is cleared (lab/CTF-only usage is unaffected by that constraint). Worth revisiting once mace_set_breakpoint itself is implemented.
+
+## Scudo heap-annotation validation: build a minimal controlled test harness instead of hunting real apps (2026-10-20)
+
+N4TIVE ch05 and MobileHackingLab were both closed as Scudo heap-validation candidates because neither actually uses Scudo -- discovered only after investing analysis time in each. Proposal: instead of continuing to hunt for real-world apps that happen to use Scudo, build a minimal purpose-built NDK test app instead.
+
+Rationale: heap annotation validation needs known ground truth first -- a test app where every malloc / free / realloc call is deliberately placed means MACE annotation can be checked against exactly what was allocated, rather than reverse-engineering an unknown real app allocation pattern blind before even knowing if the annotation is correct. Determinism beats realism at this stage of validation.
+
+Design notes:
+- Guarantee Scudo linkage explicitly rather than hoping for it -- target a recent API level (29+, 64-bit) and confirm via checking /proc/PID/maps for libscudo.so at startup, since minSdkVersion, NDK version, and static linking choices are exactly what caused both prior candidates to silently not use Scudo.
+- Exercise both allocator paths -- the Scudo primary size-class allocator for small chunks and the secondary mmap-based path for large ones -- not just one.
+- Deliberately plant common heap corruption bug classes (double-free, use-after-free, heap overflow) one at a time, so MACE annotation can be validated incrementally against each failure mode rather than only the happy path.
+- Treat this as stage one only -- once the annotation mechanism is validated against known ground truth here, then revisit a real complex app (for fragmentation, multi-threaded allocation races, and other messiness a synthetic app will not surface) as a meaningful stage-two test.
+
+Not yet scoped into a dated work item -- captured here so it does not drop out of memory before next session.

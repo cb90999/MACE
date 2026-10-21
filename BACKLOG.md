@@ -2120,3 +2120,82 @@ Pure checksum puzzle (rotl3/xor/add chain over 32 bytes, target
 (meet-in-the-middle over random 30-byte prefixes + exhaustive last-2-byte
 inversion) rather than anything lldb-side — mentioned here only for
 completeness of the ch03 writeup, not a MACE technique.
+
+## Android/JNI context-panel annotation: captured as a real gap, not yet scoped (2026-10-21)
+
+Two full Android JNI targets (N4TIVE ch04 Anti-Debug Gauntlet, ch03 Type
+Confusion) have now been cleared entirely in raw lldb, with mace_patch as
+the only MACE feature actually exercised on either -- mace_on was never
+turned on for either session.
+
+Root cause isn't incompatibility with what these sessions were doing
+(direct native-function-call injection) -- mace_on's base register panel
+(full AArch64 register state, decoded CPSR, SP/FP/LR/PC, ASLR slide) is
+architecture-level and would work fine on Android as-is. The reason it
+added no value in practice is that mace_on's semantic annotation layer --
+Swift type resolution, passive Objective-C call annotation, syscall
+decode -- is entirely iOS-specific by construction (Swift metadata
+parsing, objc_msgSend convention, XNU's BSD-syscall/Mach-trap x16
+convention). None of it resolves on an Android/JNI target. This is
+already named in README.md's Planned list ("architecture is designed to
+accommodate a parallel Android/JNI context layer alongside the
+Swift-specific one, but no Android target has been attempted yet") --
+not a new discovery, just now backed by two real sessions' worth of
+evidence that it's worth prioritizing.
+
+Proposed shape, modeled directly on the existing Swift annotation: when
+stopped inside a JNI-exported function (Java_<package>_<class>_<method>
+naming convention, or resolvable via the attached package's class table),
+annotate "you are here: Java_com_ctf_nativectf_challenges_Ch03_gate1"
+the same way Swift annotation currently resolves
+"LocalAuthChecker.authenticate()". Stretch: decode JNIEnv*/jobject args
+from the calling convention (x1 = JNIEnv*, x2 = jobject this, x3.. =
+actual args) the way syscall annotation decodes x16.
+
+Not yet scoped into a dated work item -- captured here so it does not
+drop out of memory before next session, same tier as the Scudo
+heap-annotation entry above. Candidate for after v2.5.
+
+## mace_expression: wrap JNI injection boilerplate, not raw expression evaluation (2026-10-21)
+
+Across N4TIVE ch03/ch04, raw lldb `expr --` direct native-function-call
+injection worked well, but produced the same friction repeatedly:
+`$`-prefixed persistent variables required whenever lldb falls back to
+compiling as C++ instead of pure C; `(void*)`-style return-type casts
+needed for calls lldb can't infer a prototype for (e.g. memcpy); and the
+JNI New*Array/Set*ArrayRegion construction pair hand-built fresh every
+time a byte[]/float[]/int[] argument was needed.
+
+Proposed shape: not a generic expression wrapper (raw `expr` already
+covers that) -- specifically a JNI-array builder
+(`mace_jni_array byte 16 0x42 0x00 ...` -> returns a `$`-named jbyteArray
+handle, handles New/Set internally) plus a call-and-audit wrapper around
+direct native-function injection (`mace_call <symbol> <args...>`) that
+logs what was called, with what, and what it returned -- modeled on the
+existing mace_patch/mace_patch_history audit-trail pattern rather than
+building something new. Today's entire gate1-4 sequence lives only in
+this session's transcript and BACKLOG.md; a mace_call audit trail would
+have captured it structurally as it happened.
+
+Not yet scoped into a dated work item -- captured here so it does not
+drop out of memory before next session.
+
+## mace_options: surface the command list on load, not just mace_on (2026-10-21)
+
+Two full sessions (N4TIVE ch03, ch04) ran entirely in raw lldb without
+touching mace_grep, mace_search, mace_trace_on, or any of the
+mace_patch_history-family commands -- not because they didn't apply, but
+because they simply didn't come to mind mid-session. mace_grep in
+particular could plausibly have helped during today's CheckJNI diagnosis
+(filtering logcat/disassembly output) and wasn't reached for.
+
+Proposed shape: a `mace_options` (or `mace_help`) command listing every
+registered mace_ command with a one-line description. Cheapest possible
+fix for discoverability: stop_hook.py line 101's load banner currently
+reads only "[MACE] Loaded. Use 'mace_on' after setting breakpoints to
+enable." -- add a second line pointing at mace_options, so the full
+command surface is visible at the start of every session rather than
+something to remember exists.
+
+Not yet scoped into a dated work item -- captured here so it does not
+drop out of memory before next session.

@@ -1,17 +1,24 @@
 # MACE — Session Handoff
 
-Last updated: 2026-10-19
+Last updated: 2026-10-21
 Repo branch: main
 Validated through: N4TIVE's Anti-Debug Gauntlet challenge (ch04,
 com.ctf.nativectf) defeated end-to-end on the Pixel 10a — 7 checks +
 HMAC flag bypass — now through mace_patch, with a full mace_patch_history
 audit trail on record (2026-10-20 rerun superseding the 2026-10-19
-raw-lldb pass).
+raw-lldb pass). N4TIVE's Type Confusion challenge (ch03) also solved
+end-to-end, 2026-10-21, pure MACE (no Frida) — gates 2–3 via direct
+expr-- native injection, including a new expr -i false + mid-call-
+breakpoint technique that deterministically defeats gate3's TOCTOU race;
+gate1's intended trigger proven unreachable on this ART build (unchecked
+GetStringUTFChars doesn't validate object type) and worked around via
+direct state patch; gate4 solved by a standalone script, not an lldb
+technique. Full writeup in BACKLOG.md.
 Current milestone: v2.1 CLOSED. Scudo heap-validation candidates
 (N4TIVE ch05, MobileHackingLab) both closed as dead ends — neither
-uses Scudo. N4TIVE's Anti-Debug Gauntlet is now a confirmed MACE
-capability demonstration; N4TIVE's Type Confusion challenge (still
-open, untried) is the next real step.
+uses Scudo. N4TIVE's Anti-Debug Gauntlet and Type Confusion challenge
+are both confirmed MACE capability demonstrations. Next real step: not
+yet decided.
 
 Paste or attach this file at the start of a new chat — with this
 assistant, a different LLM, or any capable assistant — to resume MACE

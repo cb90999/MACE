@@ -2053,3 +2053,70 @@ Design notes:
 - Treat this as stage one only -- once the annotation mechanism is validated against known ground truth here, then revisit a real complex app (for fragmentation, multi-threaded allocation races, and other messiness a synthetic app will not surface) as a meaningful stage-two test.
 
 Not yet scoped into a dated work item -- captured here so it does not drop out of memory before next session.
+
+## N4TIVE ch03 "Type Confusion" — pure-MACE lldb solve (2026-10-21)
+
+Target: com.ctf.nativectf / libch03_typeconfusion.so, 4-gate JNI type-confusion
+challenge. Solved gates 2–4 via direct native-function-call injection from
+lldb (`expr --`), zero Frida. Gate1 solved via direct state patch after its
+intended trigger path was proven unreachable on-device (see below).
+
+### Finding: ART's unchecked GetStringUTFChars does not validate object type
+
+Gate1 expects GetStringUTFChars(env, (jstring)input, NULL) to fail with a
+pending exception when `input` is actually a byte[], at which point the
+gate's fallback logic inspects the "confused" object directly. On this
+device's ART build (Pixel 10a, debuggable app → CheckJNI forced on), calling
+this with a real byte[] instead hard-aborts via art::Runtime::Abort() —
+CheckJNI treats the type mismatch as fatal rather than catchable. Confirmed
+root cause via `expr -u false --` (disable auto-unwind) + `bt`, landing
+inside libc.so`abort with a clean backtrace through
+art::Runtime::Abort → JNI CheckJNI trampoline → gate1.
+
+Fix path chosen: repackage the APK with android:debuggable="false"
+(apktool d → edit manifest → apktool b → zipalign → apksigner sign →
+uninstall/reinstall), confirmed via `adb shell run-as <pkg> id` failing
+afterward. This disables CheckJNI for the process (debuggable is what
+forces CheckJNI on for Zygote-spawned processes, independent of the global
+debug.checkjni property — see Rule 25).
+
+With CheckJNI off, re-ran gate1 via injection. Result: GetStringUTFChars
+on a byte[] still did NOT throw — confirmed via direct instrumentation
+(ExceptionCheck false, valid non-null pointer returned, strlen == 0).
+Conclusion: this ART build's *unchecked* GetStringUTFChars doesn't verify
+the jobject's actual class at all — it just reads memory assuming String
+layout. This makes gate1's entire exception-based detection branch
+structurally unreachable on this device, independent of CheckJNI. Not a
+MACE limitation — a genuine environment characteristic, now documented.
+Worked around by patching collected_fragments/gates_unlocked directly.
+
+### New technique: deterministic TOCTOU defeat via expr -i false + mid-call breakpoint
+
+Gate3 is a real time-of-check-to-time-of-use race on a Java object field
+(read, delay loop, read again — gate opens if the value changed between
+reads). No second thread was used. Instead:
+
+1. Set a breakpoint at the second GetIntField call site (inside gate3,
+   ch03_typeconfusion.c:160).
+2. Call gate3 via `expr -i false --` (the `-i false` flag means lldb does
+   NOT ignore breakpoints during the injected call — default `expr`
+   behavior ignores them).
+3. The injected call runs forward, hits the breakpoint cleanly inside
+   gate3's own stack frame (named locals in scope, confirmed via DWARF).
+4. From that stopped state, call SetIntField on the validator object's
+   `token` field via another `expr --`, changing the value mid-flight.
+5. `continue`. Execution resumes inside the original injected call, which
+   completes normally and reports its true return value via the standard
+   "Completed expression: (jint) $N = <val>" message.
+
+This is a generally reusable pattern for defeating any TOCTOU window from
+pure lldb, without needing real thread concurrency: `expr -i false --` to
+call in, a breakpoint planted in the window, a patch, `continue`.
+
+### Gate4 note
+
+Pure checksum puzzle (rotl3/xor/add chain over 32 bytes, target
+0xA3B7C9D1), no JNI trickery involved. Solved via a standalone script
+(meet-in-the-middle over random 30-byte prefixes + exhaustive last-2-byte
+inversion) rather than anything lldb-side — mentioned here only for
+completeness of the ch03 writeup, not a MACE technique.

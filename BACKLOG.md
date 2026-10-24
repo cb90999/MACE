@@ -2199,3 +2199,45 @@ something to remember exists.
 
 Not yet scoped into a dated work item -- captured here so it does not
 drop out of memory before next session.
+
+## Android/JNI context-panel annotation: built and validated (2026-10-24)
+
+Closes the gap logged 2026-10-21. Built `_annotate_jni_location` in
+lldb_session.py (mirroring `_annotate_swift_location`'s existing
+pattern exactly), a new `snap.jni_location` field in
+context_snapshot.py, and a new `── jni ──` panel section in
+context_panel.py.
+
+Mechanism: decodes JNI's real name-mangling rules (per the JNI spec)
+from the raw Java_<pkg>_<class>_<method> export name -- `_1` = literal
+underscore, `_2` = ';', `_3` = '[', `_0wxyz` = unicode codepoint (4
+hex digits), `__` + signature suffix = overload disambiguation
+(stripped, not decoded -- stretch goal). The decoded segments are then
+split into package/class/method via a naming-convention heuristic
+(classes start uppercase, same split point as Java idiom), not a real
+class-table lookup -- known, documented limitation, same "fail safe,
+not silently wrong" principle as the syscall tables: an unresolvable
+split returns nothing rather than a wrong guess.
+
+Validated live on the Pixel 10a against a trivial from-scratch Native
+C++ template project (`jniannotationtest`), not a hand-tuned example --
+two real test cases:
+- `Java_com_example_jniannotationtest_MainActivity_stringFromJNI` ->
+  `MainActivity.stringFromJNI()` (no escapes, baseline case)
+- `Java_com_example_jniannotationtest_MainActivity_hello_1world` ->
+  `MainActivity.hello_world()` (exercises the `_1` literal-underscore
+  escape specifically)
+
+Both resolved correctly through a real `mace_on` stop-hook render --
+the first actual live use of `mace_on`'s panel on Android in this
+project (ch03/ch04 both ran entirely in raw lldb). Breakpoints set on
+the exact mangled names, triggered via a tap-to-retrigger button added
+to the test app (same fix pattern as ch03's lazy-library-load issue --
+the default template's native call only fires once at launch with no
+retrigger path, so a trivial onClick handler was added to get a
+repeatable, on-demand call instead of racing the launch sequence).
+
+Not yet done, left as stretch per the original 2026-10-21 entry:
+class-table lookup instead of the naming-convention heuristic, and
+decoding JNIEnv*/jobject/args from the calling convention (x1=JNIEnv*,
+x2=jobject/jclass, x3..=args) the way syscall annotation decodes x16.

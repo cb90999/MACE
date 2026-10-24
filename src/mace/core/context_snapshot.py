@@ -50,6 +50,13 @@ class ContextSnapshot:
                                     # populated whenever Swift context is loaded and the
                                     # current frame resolves, independent of objc_msgSend
 
+    # --- JNI "you are here" annotation ---
+    jni_location: str = ""         # e.g. "MainActivity.stringFromJNI()" -- decoded
+                                    # per the JNI spec's name-mangling rules from the
+                                    # raw Java_<pkg>_<class>_<method> export name;
+                                    # "" if the current frame isn't a JNI export or the
+                                    # package/class-split heuristic couldn't resolve it
+
     # --- Syscall passive annotation ---
     syscall_name: str = ""         # e.g. "ptrace", "syscall #113" if unrecognized, "" if not
                                     # stopped at a real svc #0x80 instruction

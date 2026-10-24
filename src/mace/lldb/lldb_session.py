@@ -103,6 +103,12 @@ def snapshot_from_frame(frame: lldb.SBFrame,
     # message-send call site at all.
     _annotate_swift_location(snap, frame)
 
+    # --- JNI "you are here" annotation ---
+    # Independent of Swift/objc -- populates whenever the current frame's
+    # function name demangles as a JNI export (Java_<pkg>_<class>_<method>),
+    # regardless of why the stop happened.
+    _annotate_jni_location(snap, frame)
+
     # --- Passive syscall annotation ---
     # Independent of objc/Swift — populates whenever the current stop
     # happens to land directly on a real "svc #0x80" instruction,
@@ -147,6 +153,121 @@ def _annotate_swift_location(snap, frame) -> None:
     except Exception:
         pass  # Annotation is best-effort, never crash MACE
 
+def _decode_jni_escapes(mangled: str) -> list[str]:
+    """
+    Split a JNI-mangled name fragment into its original identifier
+    segments, decoding the JNI spec's escape sequences as it goes:
+    _1 = literal underscore, _2 = ';', _3 = '[', _0wxyz = unicode
+    codepoint (4 hex digits). An unescaped '_' is a real separator
+    (originally a '.') and ends the current segment.
+    """
+    segments = []
+    current = []
+    i = 0
+    n = len(mangled)
+    while i < n:
+        ch = mangled[i]
+        if ch == "_":
+            nxt = mangled[i + 1] if i + 1 < n else ""
+            if nxt == "1":
+                current.append("_")
+                i += 2
+                continue
+            if nxt == "2":
+                current.append(";")
+                i += 2
+                continue
+            if nxt == "3":
+                current.append("[")
+                i += 2
+                continue
+            if nxt == "0" and i + 6 <= n and all(
+                c in "0123456789abcdefABCDEF" for c in mangled[i + 2:i + 6]
+            ):
+                current.append(chr(int(mangled[i + 2:i + 6], 16)))
+                i += 6
+                continue
+            # plain separator -- end of this identifier segment
+            segments.append("".join(current))
+            current = []
+            i += 1
+            continue
+        current.append(ch)
+        i += 1
+    segments.append("".join(current))
+    return segments
+
+
+def _demangle_jni_name(func_name: str):
+    """
+    Decode a JNI-mangled native export name into (package, class, method,
+    overloaded). Returns None if func_name doesn't look like a JNI export
+    or the package/class split heuristic can't resolve it.
+
+    The mangled name is just underscore-joined segments with no inherent
+    marker for where the package ends and the class begins -- resolved
+    here via Java naming convention (classes start uppercase), not a
+    real class-table lookup. Known, honest limitation: a non-idiomatic
+    lowercase class name defeats this heuristic, same "fail safe, not
+    silently wrong" principle as the syscall tables -- caller falls back
+    to showing nothing rather than a wrong guess.
+    """
+    if not func_name.startswith("Java_"):
+        return None
+    rest = func_name[len("Java_"):]
+    if not rest:
+        return None
+
+    # "__" + encoded-signature suffix only appears for overloaded natives.
+    # No valid escape sequence can produce a literal "__" by coincidence
+    # (every escape starts with a digit, never another underscore), so a
+    # plain substring search is safe here.
+    overloaded = "__" in rest
+    if overloaded:
+        rest = rest.split("__", 1)[0]
+
+    segments = _decode_jni_escapes(rest)
+    if len(segments) < 2:
+        return None
+
+    method = segments[-1]
+    class_parts = []
+    package_parts = []
+    found_class_start = False
+    for seg in reversed(segments[:-1]):
+        if not found_class_start:
+            class_parts.insert(0, seg)
+            if seg and seg[0].isupper():
+                found_class_start = True
+        else:
+            package_parts.insert(0, seg)
+
+    if not found_class_start:
+        return None
+
+    return ".".join(package_parts), ".".join(class_parts), method, overloaded
+
+
+def _annotate_jni_location(snap, frame) -> None:
+    """
+    "You are here" JNI annotation -- independent of Swift/objc detection.
+    Resolves the current frame's function name as a JNI export, so any
+    stop inside a Java_<pkg>_<class>_<method> native function shows which
+    Java method you're actually inside, the Android/JNI equivalent of
+    Swift annotation above.
+    """
+    try:
+        func_name = frame.GetFunctionName() or ""
+        if not func_name:
+            return
+        decoded = _demangle_jni_name(func_name)
+        if not decoded:
+            return
+        _package, class_name, method, overloaded = decoded
+        suffix = " (overloaded)" if overloaded else ""
+        snap.jni_location = f"{class_name}.{method}(){suffix}"
+    except Exception:
+        pass  # Annotation is best-effort, never crash MACE
 
 def _get_stop_reason(thread: lldb.SBThread) -> str:
     """Translate LLDB stop reason enum to a human-readable string."""

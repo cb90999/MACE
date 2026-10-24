@@ -13,7 +13,10 @@ breakpoint technique that deterministically defeats gate3's TOCTOU race;
 gate1's intended trigger proven unreachable on this ART build (unchecked
 GetStringUTFChars doesn't validate object type) and worked around via
 direct state patch; gate4 solved by a standalone script, not an lldb
-technique. Full writeup in BACKLOG.md.
+technique. Full writeup in BACKLOG.md. Android/JNI context-panel
+annotation (the "you are here" gap logged 2026-10-21) also built and
+validated live on the Pixel 10a as of 2026-10-24 -- first real use of
+mace_on's stop-hook panel on Android in this project.
 Current milestone: v2.1 CLOSED. Scudo heap-validation candidates
 (N4TIVE ch05, MobileHackingLab) both closed as dead ends — neither
 uses Scudo. N4TIVE's Anti-Debug Gauntlet and Type Confusion challenge

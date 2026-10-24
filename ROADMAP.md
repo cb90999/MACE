@@ -35,7 +35,7 @@
 - README "When to Use MACE" section (done ✅ — 2026-09-04, also
   corrected two stale entries found in the same pass)
 
-## v2 — Android
+## v2 — Android — PRIORITY 1 CORE CHECKLIST COMPLETE (2026-10-21)
 
 Scope for the December NowSecure demo (2026-09-06 scoping session):
 iPad/iOS 18.x and Pixel 10a/Android 16 only — anything iOS 26/27-adjacent
@@ -1024,7 +1024,7 @@ work). Two things worth keeping:
 - Candidate Android-side static source for the same "static context
   feeds an agent alongside MACE's live observation" MCP pipeline JEB/
   Hopper already fill for iOS — real static triage available today,
-  ahead of MACE's own Android/KGDB work (not started, see v2 section).
+  ahead of MACE's own Android work (see v2 section -- Priority 1 complete as of 2026-10-21, including N4TIVE's Anti-Debug Gauntlet and Type Confusion challenges on the Pixel 10a).
 - Their Kotlin `@Metadata`/`@DebugMetadata` name-recovery technique is
   the same underlying pattern as MACE's Swift annotation work: runtime
   metadata a stripping pass can't remove without breaking the runtime

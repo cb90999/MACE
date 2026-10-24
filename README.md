@@ -6,10 +6,10 @@ for iOS (and eventually Android) debugging, built on LLDB's Python API
 rather than dynamic library injection.
 
 ## Status
-v1 — active development. Core capabilities below are implemented and
-validated against real iOS hardware; items under "Planned" are not yet
-built. See `ROADMAP.md` for current sequencing and `BACKLOG.md` for
-parked research threads.
+v2 — active development. Core capabilities below are implemented and
+validated against real iOS and Android hardware; items under
+"Planned" are not yet built. See `ROADMAP.md` for current sequencing
+and `BACKLOG.md` for parked research threads.
 
 ## What works today
 
@@ -48,6 +48,10 @@ parked research threads.
   before/after value, PC, breakpoint ID, containing function,
   timestamp) to an in-session audit trail reviewable via
   `mace_patch_history`.
+- **`mace_hw_break`** — hardware breakpoint mode for hardened/
+  anti-debug targets where a software breakpoint would be detected.
+  Validated live against `mach_msg2_trap` on real hardware, with a
+  full audit trail via `mace_hw_break_history`.
 - **Breakpoint identification** — every panel surfaces the exact
   breakpoint ID that fired (e.g. `breakpoint 2.1`), matching LLDB's own
   stop-reason output, rather than an undifferentiated "breakpoint".
@@ -103,18 +107,23 @@ framework — worth being explicit about both sides of that.
   do I proceed" in natural language. This is the intended v3
   differentiator; the panel above is designed to be genuinely useful on
   its own before this layer lands, not a placeholder for it.
-- **Hardware breakpoint mode** for hardened/anti-debug targets
-- **Android support** — architecture is designed to accommodate a
-  parallel Android/JNI context layer alongside the Swift-specific one,
-  but no Android target has been attempted yet.
+- **Android/JNI context-panel annotation** — base register panel and
+  `mace_patch` are both validated live on Android (Pixel 10a, Android
+  16) against multiple targets, including N4TIVE's Anti-Debug
+  Gauntlet and Type Confusion CTF challenges; what's still missing is
+  the semantic annotation layer itself (a JNI-aware "you are here"
+  equivalent to the existing Swift type annotation) — see BACKLOG.md's
+  2026-10-21 entry.
 
 ## Host vs. target
 
 MACE runs on **macOS (Apple Silicon)** as the host, using LLDB's Python
-scripting API. The debug **target** is a real iOS device (validated on a
-jailbroken iPad, A10, iOS 18.7.2) reached over a `debugserver` connection
-— MACE does not require or use a jailbroken host, only a jailbroken (or
-otherwise debuggable) target device.
+scripting API. The debug **target** is either a real iOS device
+(validated on a jailbroken iPad, A10, iOS 18.7.2) reached over a
+`debugserver` connection, or a real Android device (validated on a
+rooted Pixel 10a, Android 16, Tensor G4) reached via lldb-server
+platform mode — MACE does not require or use a jailbroken/rooted host,
+only a jailbroken/rooted (or otherwise debuggable) target device.
 
 ## Why LLDB-native instead of Frida
 

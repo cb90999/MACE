@@ -14,6 +14,23 @@ ALL interesting behavior routes through syscalls -- no libc wrapper
 calls (puts, etc.) visible to attach to by name, unlike every other
 target used in v1/v2 so far.
 
+## Entry-point refactor — required before porting, not optional
+The current `_main(argc, argv)` convention is a standalone-executable
+calling convention that neither a Swift app nor a JNI wrapper can call
+directly without synthesizing a fake argv array -- don't do that, it's
+a worse failure mode than a build error since it could "work" in
+subtly inconsistent ways across platforms.
+
+Required refactor, applied once, before platform-specific porting:
+expose the actual check as a function taking a single string pointer
+directly -- e.g. rename the entry point to `collatz_eea_v2_check(const
+char *input)` returning an int (0 = fail, 1 = pass). The host app
+(iOS Swift, Android JNI wrapper) passes the user-entered string
+straight through; no argv synthesis on either platform. Keep this
+refactor minimal -- it's a calling-convention change only, not a
+logic change, and the "do not fix the collision weakness" rule below
+still applies to everything inside the function body.
+
 **Deliberately preserve as-is: do not fix the collision weakness.**
 The dual-accumulator design is NOT actually collision-resistant (see
 ROADMAP.md's 2026-10-03 entry for the full analysis -- both
@@ -63,6 +80,14 @@ What actually changes:
   original macOS design expects, and could change behavior in a way
   worth knowing about before relying on it for the demo.
 
+## Function naming — follow exactly, both platforms
+- **Android**: ordinary Java naming convention — package
+  `com.chidabangalore.collatzeeav2`, class `MainActivity`, method
+  `checkFlag`. Class name must start uppercase.
+- **iOS**: wrap the native check in a named Swift type with a real
+  method name (not an anonymous closure or free function) — e.g. a
+  `CollatzChecker` class/struct with a `check(_:)` method.
+
 ## Porting to Android — real porting work, not a recompile
 Android is Linux/ELF, a genuinely different platform family from
 Darwin. Specific changes needed:
@@ -96,24 +121,12 @@ Darwin. Specific changes needed:
   permission is declared in the manifest, or `socket()` itself may
   fail differently than the "connection refused" the current code
   expects.
+- **UI trigger: avoid a one-shot launch-time call.** A native call
+  that only fires once automatically on app launch (no later
+  user-triggerable path) creates an unwinnable race against lldb
+  attach -- confirmed firsthand 2026-10-24 building the trivial JNI
+  annotation test target. Build a real input field + submit button
+  on both platforms instead: the user types a candidate flag and taps
+  submit, calling the check function on demand, repeatably, as many
+  times as a debugging session needs.
 
-## What MACE needs to validate once this exists on both platforms
-Per ROADMAP.md's v2.5 framing (syscall-annotation stress test on a
-hardened, obfuscated, syscalls-only target):
-1. MACE can observe and correctly annotate the custom `svc #0x10`-
-   `#0x15` dispatch — not a standard BSD/Mach or Linux syscall number
-   range, a genuinely custom table. Good stress test for whether
-   MACE's annotation logic over-assumes "the syscall table" is a
-   fixed, known set.
-2. Register state at each `svc` call site (x20, x24, x26, x28) reads
-   correctly via the MACE context panel on both platforms.
-3. The Frida-detection corruption path (x28) reads 0 when MACE itself
-   is attached via lldb (not Frida) on both platforms — confirming
-   MACE's own dynamic instrumentation doesn't trip Frida-style
-   detection the way process-injection tools do.
-4. (secondary demo goal, not a MACE engineering requirement) Walking
-   through the dual-accumulator collision weakness live via MACE —
-   showing register values confirm the algorithm, then showing a
-   second, different input also passes — doubles as a real-world
-   lesson about collision-resistant check design under deadline
-   pressure, alongside the primary syscall-annotation validation.

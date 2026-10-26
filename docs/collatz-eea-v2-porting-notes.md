@@ -81,12 +81,16 @@ What actually changes:
   worth knowing about before relying on it for the demo.
 
 ## Function naming — follow exactly, both platforms
-- **Android**: ordinary Java naming convention — package
-  `com.chidabangalore.collatzeeav2`, class `MainActivity`, method
-  `checkFlag`. Class name must start uppercase.
+App/project name: "Enigma" on both platforms — deliberately
+non-obvious, does not reveal the Collatz/EEA algorithm (this binary
+is meant to be reverse-engineered, not labeled).
+- **Android**: package `com.chidabangalore.enigma`, class
+  `MainActivity`, method `checkFlag`. Class name must start uppercase
+  (required for MACE's annotation resolution -- see the naming
+  rationale in docs/v2.5-mace-validation.md).
 - **iOS**: wrap the native check in a named Swift type with a real
-  method name (not an anonymous closure or free function) — e.g. a
-  `CollatzChecker` class/struct with a `check(_:)` method.
+  method name (not an anonymous closure or free function) — e.g. an
+  `EnigmaChecker` class/struct with a `check(_:)` method.
 
 ## Porting to Android — real porting work, not a recompile
 Android is Linux/ELF, a genuinely different platform family from

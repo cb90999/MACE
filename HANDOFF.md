@@ -51,11 +51,14 @@ and to any LLM assistant working the project, not just one specific one.
 - v2.1: CLOSED (2026-10-03) — all three polish items done and
   live-validated (get_long_help() fix, mace_patch_mem, per-platform
   connect automation).
-- v2.5: EEA/Collatz dual-platform syscall-annotation target. Source
-  materials committed 2026-10-03; porting handoff written for Cursor
-  (docs/collatz-eea-v2-porting-notes.md). Cursor's actual iOS/Android
-  porting work NOT YET DONE — happens outside this chat, on CB's own
-  schedule, no date currently set.
+- v2.5: EEA/Collatz dual-platform validation target. Source materials
+  committed 2026-10-03; porting spec tightened 2026-10-26 (entry-point
+  refactor requirement, Swift/JNI naming requirements, UI-trigger
+  requirement, Enigma naming for CTF obscurity). Validation checklist
+  split into its own file, docs/v2.5-mace-validation.md, since it's
+  not a Cursor build instruction. Spec is ready to hand to Cursor;
+  actual porting work NOT YET STARTED — happens outside this chat, on
+  CB's own schedule.
 - Scudo heap-validation candidates: CLOSED as dead ends (2026-10-19).
   N4TIVE's Heap Feng Shui challenge (ch05) uses a custom 8-slot slab
   allocator, not Scudo. The MobileHackingLab candidate uses jemalloc,
@@ -81,11 +84,14 @@ and to any LLM assistant working the project, not just one specific one.
   entry.
 
 ## Immediate next work
-1. N4TIVE's Type Confusion challenge — still open, not yet attempted.
-   (Anti-Debug Gauntlet rerun through mace_patch is DONE as of
-   2026-10-20 — see BACKLOG.md's dated entry for full detail, including
-   the double-decoy flag mechanism and the direct function-call-
-   injection technique used to test it.)
+1. v2.5's collatz_eea_v2 iOS/Android ports — spec finalized
+   2026-10-26, ready to hand to Cursor (see Active milestone above).
+   Once both exist, work through docs/v2.5-mace-validation.md's
+   checklist.
+
+(N4TIVE's Anti-Debug Gauntlet (ch04) and Type Confusion (ch03) are
+both DONE — ch04 2026-10-20, ch03 2026-10-21 — see BACKLOG.md's dated
+entries. Android/JNI context-panel annotation also DONE, 2026-10-24.)
 
 Deferred, no session currently allocated:
 - N4TIVE's remaining challenges not already covered (XOR decryption,
@@ -99,9 +105,6 @@ Deferred, no session currently allocated:
   panel, register grouping.
 - Configurable watched registers (WATCH_REGS hardcoded) — see
   BACKLOG.md's 2026-10-02 entry.
-- Cursor's actual iOS/Android porting work on collatz_eea_v2 — see
-  v2.5 status above and docs/collatz-eea-v2-porting-notes.md. Happens
-  outside this chat.
 
 ## Validated targets (v2, complete — see ROADMAP.md Priority 1)
 - Frida-0x8 — mace_patch register flip, live syscall annotation.
@@ -257,6 +260,8 @@ wrong or outdated as advice today. Do not re-derive or re-try these:
 - docs/ios-setup.md — equivalent for iOS/debugserver
 - docs/debugging-playbook.md — accumulated RE technique/judgment rules
 - docs/collatz-eea-v2-porting-notes.md — v2.5 handoff spec for Cursor
+- docs/v2.5-mace-validation.md — v2.5 validation checklist (for
+  CB/MACE once Cursor's ports exist, not a Cursor instruction)
 - scripts/android_device_prep.sh — automated Android device-prep
   (Layer 1 of connect automation)
 - targets/src/collatz_eea_v2.s, collatz_eea_v2_helpers.c — v2.5
@@ -265,10 +270,6 @@ wrong or outdated as advice today. Do not re-derive or re-try these:
   are explicitly tagged inline, not just here)
 - BACKLOG.md — parked research threads, feasibility assessments,
   architecture ideas (chronological, search by date or keyword)
-
-Known gap: README.md is stale relative to this file (still describes
-Android as "not attempted yet" and MACE as v1) — worth a documentation
-pass eventually, not blocking, flagged 2026-09-27, still deferred.
 
 ## Repo
 github.com/cb90999/MACE

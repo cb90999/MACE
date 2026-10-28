@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 *.pyo
 .DS_Store
+.mace_android_target
 
 # Compiled binaries — tracked intentionally in targets/
 # (remove this if you want to exclude them)

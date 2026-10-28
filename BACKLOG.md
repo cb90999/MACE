@@ -2241,3 +2241,90 @@ Not yet done, left as stretch per the original 2026-10-21 entry:
 class-table lookup instead of the naming-convention heuristic, and
 decoding JNIEnv*/jobject/args from the calling convention (x1=JNIEnv*,
 x2=jobject/jclass, x3..=args) the way syscall annotation decodes x16.
+
+## 2026-10-28 — v2.5 Android validation, first pass (Pixel 10a)
+
+Installed Cursor's Enigma Android build (com.chidabangalore.enigma,
+commit b4b4166's porting-notes.md spec) on the Pixel 10a and ran a
+first live MACE validation pass against docs/v2.5-mace-validation.md.
+Partial — picking back up to finish Android, then iOS.
+
+CONFIRMED:
+- Item 5 (JNI annotation): snap.jni_location resolved correctly to
+  "MainActivity.checkFlag()" on every real stop, twice across two
+  separate attach sessions. x0/x1/x2 at the JNI entry breakpoint
+  matched the expected JNIEnv*/jobject/jstring calling convention.
+- Item 1/2 (svc dispatch + register state): mapped all six
+  svc_dispatch sites in collatz_eea_v2_check's disassembly —
+  #0x11 (get_prime, -> x24), #0x15 (is_frida_active dispatch,
+  -> x28), #0x10/#0x14 (accumulator checks vs x20/x26), #0x12/#0x13
+  (access_granted/denied, real + decoy sites). Confirmed Android's
+  Linux SVC mechanism works as Cursor described: kernel reads the
+  syscall number from x8 (primed via "mov x8, #0xf0f0" before each
+  svc), not the instruction's own immediate; the #0x10-#0x15
+  immediates are preserved in the instruction stream for MACE's
+  benefit only. SIGSYS correctly traps under lldb before the
+  in-process sigaction handler runs; register state right after a
+  dispatch (e.g. x0 immediately post-svc) is NOT yet the handler's
+  patched return value -- confirmed you must let the signal actually
+  resolve (continue past an intermediate libc __rt_sigprocmask /
+  "trace" stop) before the destination register (x24, x28, etc.)
+  holds the real computed value.
+
+OPEN:
+- Item 3 (Frida-detection reading 0 under MACE's attach): NOT yet
+  confirmed. x28 read 0xFFFFFFFB after the #0x15 dispatch resolved
+  -- same value as PRIME (x24), not the expected clean 0/1 boolean.
+  Traced one level deeper: the dispatch target per the .S source
+  comment is is_frida_active(), a DIFFERENT symbol from check_frida()
+  (the one with the actual socket()/connect()/setsockopt() calls --
+  confirmed via image lookup -r -n is_frida_active, separate address).
+  check_frida() never got hit when breakpointed mid-session, which is
+  consistent with it running once at libenigma.so load
+  (__attribute__((constructor)), per the original target design) and
+  is_frida_active() reading back a cached result at request time
+  rather than re-probing. Did not get to breakpoint is_frida_active()
+  itself before the session ended (ANR killed the process -- see
+  below). Needs a clean restart to trace is_frida_active() directly
+  and find where 0xFFFFFFFB is actually coming from.
+- ANR risk breakpointing JNI calls: checkFlag() runs on the main/UI
+  thread. Holding a breakpoint open for more than ~5s while
+  inspecting/discussing triggers Android's ANR watchdog ("Enigma
+  isn't responding"); outlasting the ANR dialog got the process
+  SIGSEGV-killed once (process exited status 11) mid-session.
+  Lesson for tomorrow: move fast through breakpoint stops once
+  inspected, or expect to need a reattach after any extended pause.
+
+THREE MACE ANNOTATION/DISPLAY BUGS FOUND (not yet fixed -- batching
+for later, per CB's call 2026-10-28):
+1. _get_breakpoint_id() (lldb_session.py) doesn't validate
+   GetStopReasonDataAtIndex()'s return against LLDB's "invalid ID"
+   sentinel. When a secondary thread is reported by LLDB as
+   eStopReasonBreakpoint without a real breakpoint hit backing it
+   (observed consistently on thread "Jit thread pool", ART's
+   background JIT compiler thread), the banner renders garbage:
+   "breakpoint 18446744073709551615.1" (UINT64_MAX). Fix: guard
+   bp_id/loc_id against a large-sentinel check before formatting.
+2. MACEStopHook.handle_stop (stop_hook.py) is invoked once per
+   thread when LLDB reports multiple threads stopped for one event.
+   Two concurrent handle_stop invocations' stream.Print() calls can
+   interleave character-by-character in the output -- confirmed
+   directly: thread 1's x1 register ASCII field was spliced mid-word
+   by thread 5's "-- Thread 5" header ("w=0x5c000000  '-- Thread 5").
+   Also produced several panels that looked "truncated" (cut off
+   after x0, or after x10) with no error -- likely the same race,
+   not a crash in render_registers (which builds its full string
+   before printing, so a mid-loop exception should produce no output
+   at all, not a partial one).
+3. Corollary of #1/#2: at least once, LLDB's own post-stop summary
+   text reported the wrong stop reason/breakpoint number entirely
+   for thread 1's real stop (showed "breakpoint 4.1" with a PC at
+   function+40, while MACE's own banner -- computed from the same
+   snapshot -- correctly showed the offset for breakpoint 4 at
+   function+60). Same thread-reporting confusion, different
+   symptom; worth looking at as one root cause rather than three
+   separate bugs.
+
+Next: clean Android reattach, breakpoint is_frida_active() directly
+(not check_frida()), trace where 0xFFFFFFFB comes from, then same
+validation pass on iOS once Android's fully closed out.

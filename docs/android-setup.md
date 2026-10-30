@@ -15,6 +15,34 @@
   (23.1.1); Apple's bundled lldb has not been ruled out but was not
   the version this recipe was proven against
 
+## Quick Start (Scripted)
+
+Three scripts in `scripts/` automate the full per-session sequence
+below, each wrapping a documented layer of the manual process:
+
+    scripts/android_device_prep.sh [PORT] [LOCAL_LLDB_SERVER_PATH]
+        Pushes lldb-server if needed, clears stale lldb-server
+        processes, starts it in platform mode, sets up adb forward.
+        Wraps "Start lldb-server" below.
+
+    scripts/android_relaunch.sh <package[/activity]>
+        Force-stops and relaunches the target app, waits for its pid.
+        e.g. scripts/android_relaunch.sh com.chidabangalore.enigma/.MainActivity
+
+    scripts/android_connect.sh [package] [pid]
+        Starts lldb and runs the full connect sequence (platform
+        select, package name, parallel-module-load off, signal
+        handling, platform connect, process attach). Package/pid
+        default to whatever android_relaunch.sh last used. Wraps
+        "MACE Connection from M5" and "Launching and Attaching"
+        below.
+
+Run in that order each session. Breakpoints and `mace_on` are still
+set manually once attached. The manual steps below remain the
+reference for what each script is doing and the fallback if a
+script's assumptions don't fit (e.g. a non-standard port or
+multiple devices).
+
 ## Extracting lldb-server
 Pulled from the NDK, not built from source. The macOS NDK package is
 a DMG containing an .app-bundle-shaped folder that is NOT a real
@@ -60,6 +88,8 @@ quoting breaks).
 Port 10500 is this project's standard Android port — use it
 consistently rather than improvising a different one per session.
 
+(Automated by `scripts/android_device_prep.sh`.)
+
 ## MACE Connection from M5
 
     lldb
@@ -99,6 +129,10 @@ A long stream of `No LZMA support found for reading .gnu_debugdata
 section` warnings during attach is expected and cosmetic (this lldb
 build lacks LZMA decompression for Android system libraries'
 compressed mini-symbol-tables) — not an error, keep going.
+
+(The relaunch step is automated by `scripts/android_relaunch.sh`;
+the lldb startup/attach sequence above it by
+`scripts/android_connect.sh`.)
 
 ## Setting Breakpoints in App Libraries (e.g. libil2cpp.so)
 

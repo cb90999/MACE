@@ -2380,3 +2380,68 @@ the NowSecure webinar demo.
 
 Next: proceed with the remaining validation items (collision-weakness
 demo walkthrough) rather than continue chasing this.
+
+## 2026-10-30 — Collision-weakness walkthrough + Frida-corruption non-interference (Pixel 10a)
+
+CONFIRMED — checklist item 6 (secondary demo goal) complete.
+
+Live collision demo via MACE, using the real flag and its exact
+reverse (same 32-character multiset, different order):
+
+  real:     ohgi1jnyt7rpwh6nnyfx4m8t1qojah9t
+  reversed: t9hajoq1t8m4xfynn6hwpr7tynj1igho
+
+Both runs landed on access_granted with identical accumulator
+values: x20 = 33 (0x21), x26 = 180 (0xB4) — matching magic1/magic2
+exactly. Live proof of the collision ROADMAP.md's 2026-10-03 entry
+predicted (XOR's commutativity: any rearrangement of the same
+character multiset produces the same final accumulators).
+
+Mechanism note: x20/x26 are NOT readable from a normal breakpoint on
+access_granted() itself — its own prologue repurposes those
+callee-saved registers for its own use (iterating the XOR-encrypted
+string), overwriting the real accumulator values in the live
+register file. The real values only exist in the ucontext_t that was
+captured at the last svc trap, since the final grant/deny dispatch
+is itself routed through the same svc #0x10-#0x15 trick as
+everything else in this binary (no plain cmp/bl to breakpoint on
+directly). Read them from the interrupted context instead, one frame
+up inside svc_handler:
+
+  (lldb) up
+  (lldb) expr ((ucontext_t*)ucontext)->uc_mcontext.regs[20]
+  (lldb) expr ((ucontext_t*)ucontext)->uc_mcontext.regs[26]
+
+Side finding: the real flag passed cleanly (access_granted,
+uncorrupted 0x21/0xB4) despite frida_detected reading 1 throughout
+this session (see this morning's open Frida-detection entry) --
+whatever the corruption path is meant to do, it is not visibly
+affecting this build's accumulator result. Does not change this
+morning's finding, just confirms it isn't blocking anything.
+
+Input-automation note: attempted `adb shell input text "<flag>"` to
+avoid holding the main thread during 32-character manual typing
+(ANR risk). Only partially worked -- roughly the first 8 characters
+landed, the rest had to be typed manually. No ANR occurred on this
+run regardless. Not yet a reliable technique; worth revisiting
+(possible IME/event-queue rate issue) before relying on it for the
+NowSecure demo.
+
+Post-continue crash, not chased further: after the second
+(reversed-flag) breakpoint stop, letting the process `continue` and
+then running `adb logcat` concurrently coincided with a genuine
+native crash (tombstone at 13:07:18, ART InvokeMethod/
+InvokeWithVarArgs frames -- died mid-JNI-call) rather than a clean
+on-screen "Access Granted" render. No ANR this time, unlike
+Wednesday's crash. Likely connected to the known lldb/adb-forwarding
+connection fragility (an earlier "lost connection" was observed
+moments before, also coinciding with running logcat concurrently)
+rather than anything about Enigma's or MACE's own logic -- the
+register-level collision proof above was already captured cleanly
+before this happened, so it does not affect today's result. Worth
+keeping in mind: avoid running adb logcat concurrently with an active
+lldb session against the same device until this is better understood.
+
+Next: iOS validation pass (checklist items 4 and the same collision
+walkthrough on EnigmaChecker.check()), per BACKLOG.md's 2026-10-28
+entry's stated next step.

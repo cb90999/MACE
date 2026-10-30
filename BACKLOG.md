@@ -2328,3 +2328,55 @@ for later, per CB's call 2026-10-28):
 Next: clean Android reattach, breakpoint is_frida_active() directly
 (not check_frida()), trace where 0xFFFFFFFB comes from, then same
 validation pass on iOS once Android's fully closed out.
+
+## 2026-10-30 — Frida-detection investigation (Pixel 10a)
+
+OPEN — root cause not found, does not block validation.
+
+`is_frida_active()` reads `frida_detected = 1` (true) on every observed
+fresh process launch on this specific Pixel 10a (confirmed on three
+separate PIDs: 2759, 4126, 7650), despite exhaustively ruling out every
+plausible cause:
+
+- Source logic (`check_frida()` in collatz_eea_v2_helpers.c): correct
+  `htons()`/`htonl()` byte order, correct `== 0` success check, correct
+  zero-initialized `volatile int frida_detected = 0` declaration. Matches
+  the original .docx source exactly — no regression introduced by the
+  Cursor Android port.
+- On-device binary disassembly: matches the C source logic exactly
+  (confirmed via `disassemble --name check_frida` against the actual
+  installed libenigma.so).
+- No real listener on port 27042 at any observed moment: `ps -A` shows
+  no frida-server or suspicious process; `/proc/net/tcp` and
+  `/proc/net/tcp6` empty for port 27042 (0x69A2) both at rest and under
+  tight (10-20ms) polling windows spanning both app relaunch and the
+  first native-code entry (Submit tap) — ruling out a transient
+  bind/listen race at either moment.
+- A vanilla `nc` connect to 127.0.0.1:27042 from the shell UID gets an
+  immediate `Connection refused` on this exact device, same moment —
+  proving the kernel path itself fails fast with nothing listening.
+- No iptables/netfilter rule (NAT, UID-scoped, or otherwise) touches
+  port 27042 on this device — ruled out via `iptables -t nat -L -n -v`
+  and `iptables -L -n -v` as root; only stock Android netd chains
+  present (bandwidth metering, firewall denylist, tethering).
+
+Working theory: something specific to this Pixel 10a's rooted
+(Magisk) lab configuration causes a UID- or namespace-scoped accept
+for this one app's connect() attempts that isn't visible from the
+`shell` user's vantage point via any of the above tools. Not
+pursued further at this time — treating `frida_detected = 1` as this
+device's baseline for Enigma rather than a MACE or Enigma bug, since
+every code-level and standard environment-level explanation has been
+ruled out.
+
+Impact: item 3 of docs/v2.5-mace-validation.md's checklist
+(Frida-detection reading 0 under MACE's attach) cannot be
+demonstrated as written on this device — the baseline itself reads
+1 independent of MACE's presence. Validation checklist item 3 should
+be reworded to describe the *observed* baseline rather than an
+expected-0 reading, or re-tested on a different (non-rooted, or
+differently-configured) device if a clean-0 baseline is needed for
+the NowSecure webinar demo.
+
+Next: proceed with the remaining validation items (collision-weakness
+demo walkthrough) rather than continue chasing this.

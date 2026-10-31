@@ -2727,3 +2727,45 @@ Checklist status update: items 1 and 6 now complete. Item 3
 (Frida-detection reading under MACE on iOS) deliberately
 deprioritized -- not important per today's call. iOS validation pass
 is effectively done for this session's scope.
+
+## 2026-10-31 — Enigma validation-target changes requested: drop
+Frida-detection path, add Reset button (spec handed to Cursor)
+
+DECISION — not yet implemented, tracked here for traceability.
+Handed Cursor a spec for two changes to Enigma (collatz_eea_v2's
+shared check target, both iOS and Android builds), motivated
+directly by today's session:
+
+1. Remove the Frida-detection path entirely from the shared
+   collatz_eea_v2_helpers.c -- check_frida(), is_frida_active(), the
+   associated global flag, the dispatch_table entry/custom svc
+   opcode used to invoke it, and the per-character-loop gating
+   branch that uses its result (x28) to conditionally skip the real
+   XOR accumulation. Justified by data, not just inconvenience: x28
+   read as 1 ("clean") in every live reading today, the 2026-10-30
+   entry already confirmed MACE's own attach doesn't trip it, and
+   checklist item 3 (the validation item this path exists to serve)
+   was explicitly deprioritized earlier today. Keeping it was adding
+   investigative surface area (chasing x28/denied register values)
+   for zero remaining validation value.
+
+2. Add a Reset button to the Enigma UI on both platforms -- clears
+   both the flag input field and the result label back to their
+   pre-submission state (no stale text, no ambiguity about whether a
+   currently-displayed result is fresh). Directly motivated by
+   today's repeated stale-UI confusion: the mistyped-flag field
+   contents lingering across attempts, and uncertainty over whether
+   "Access Denied" on screen was from the just-submitted flag or a
+   previous one -- cost real time today disambiguating via explicit
+   bt/frame reads rather than trusting the screen at a glance.
+
+Full spec (function/file removal list for item 1, exact button
+behavior for item 2) handed to Cursor directly, not reproduced here.
+
+Next: once Cursor implements and CB rebuilds/reinstalls on both
+devices, re-validate that collatz_eea_v2_check's core logic
+(accumulation, check_flag's two comparisons, the opaque-predicate
+bug and its check_flag-patch workaround) still behaves identically
+with the Frida path removed -- the x28 gating removal changes the
+character-loop's instruction sequence, so worth a quick re-confirm
+rather than assuming it's purely subtractive.

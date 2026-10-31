@@ -2769,3 +2769,48 @@ bug and its check_flag-patch workaround) still behaves identically
 with the Frida path removed -- the x28 gating removal changes the
 character-loop's instruction sequence, so worth a quick re-confirm
 rather than assuming it's purely subtractive.
+
+
+## 2026-10-31 — Frida-path removal validated on iOS; eeacollatz opaque-predicate root cause confirmed; Android cross-platform story reuses N4TIVE
+
+**Context:** Following the iOS opaque-predicate bypass (earlier 2026-10-31 entries above)
+and the decision to drop Enigma's Frida-detection path entirely, Cursor implemented the
+spec (removal of `check_frida()`/`is_frida_active()`/the `frida_detected` global/the
+`charset_ok` gating branch, plus a Reset button on both platforms).
+
+**Root cause (confirmed):** The `charset_ok` block in the per-character loop was never
+part of the real accumulation. It was extra, undocumented noise gated on `x28` (the
+Frida-clean flag), which always read `1` — so the noise block always executed and
+corrupted `x20`/`x26` before the real, unconditional accumulation in `char_done` (driven
+by `x25`, derived from collatz/eea step counts) could produce the correct values. This is
+why patching `x20`/`x26` directly at `check_flag`'s two `cmp` sites always produced
+"Access Granted!" earlier this week — the real algorithm was correct; the noise layered on
+top was not.
+
+**iOS re-validation:** Clean rebuild confirmed via Xcode toolbar timestamp (caught and
+corrected one stale-build false positive first — visible source isn't proof of an updated
+binary). Entered the real flag with zero MACE patches applied. Result: "Access Granted!" —
+confirms the Frida-path removal fixed the bug at its source, not just its symptom.
+
+**Android: decided not to re-run eeacollatz.** Started an Android re-validation of the
+same fix and got consistent register-level evidence it holds there too (`register read x0
+x26` at `check_flag`'s real `cmp x26, x0` showed `x0 == x26 == 0xb4`, unpatched). The run
+was twice interrupted — once by an lldb/adb disconnect, once by a genuine SIGSEGV (pid
+21812, 12:25:11) — before a final UI screenshot could be captured. Logcat tombstone
+analysis showed that SIGSEGV's backtrace is byte-for-byte identical (same registers, same
+62-frame ART-interpreter-only backtrace, no Enigma/native frames) to crashes already
+logged on 10-28 and 10-30, before today's changes — a pre-existing, unrelated ART/lldb
+interaction (likely the same pause-induced mechanism behind the logged ANRs), not a
+regression from the Frida-path removal.
+
+Decided against chasing a clean screenshot via a shortened flag or further crash
+root-causing: re-running eeacollatz on Android would only reconfirm the same
+opaque-predicate fix already proven on iOS, not demonstrate anything new about MACE's
+Android capability. The stronger cross-platform story is already on record — N4TIVE's ch03
+"Type Confusion" and ch04 "ANTI-DEBUG" Gauntlet were both solved end-to-end on the Pixel
+10a via pure MACE/lldb (see the 2026-10-20 and 2026-10-21 entries above), covering two
+distinct Android-specific vulnerability classes with a captured success screenshot. For the
+NowSecure webinar/demo narrative: iOS = eeacollatz (opaque-predicate defeat, found and
+fixed this week), Android = N4TIVE ch03/ch04 (type confusion + anti-debug gauntlet,
+pre-existing MACE wins) — distinct bug classes per platform, which demonstrates more than
+the same fix validated twice.

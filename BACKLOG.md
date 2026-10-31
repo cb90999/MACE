@@ -2445,3 +2445,90 @@ lldb session against the same device until this is better understood.
 Next: iOS validation pass (checklist items 4 and the same collision
 walkthrough on EnigmaChecker.check()), per BACKLOG.md's 2026-10-28
 entry's stated next step.
+
+## 2026-10-31 — iOS validation pass begins: Swift annotation confirmed, real-flag opaque-predicate bug found (iPad 7th Gen)
+
+CONFIRMED — checklist item 4 complete. OPEN — new finding, not yet
+root-caused, noted for next session.
+
+Item 4 (Swift "you are here" annotation): confirmed clean via a
+regex breakpoint (`breakpoint set -r "EnigmaChecker.*check"`) on a
+normal Debug-scheme Xcode build (unstripped). Landed correctly at:
+
+  Enigma`EnigmaChecker.check(input="ohgi1jnyt7rpwh6nnyfx4m8t1qojah9t")
+  at EnigmaChecker.swift:5:15
+
+lldb's Swift ABI awareness even surfaced the actual string argument
+value inline -- a cleaner "you are here" than the Android JNI case.
+A recurring cosmetic DWARF warning ("EnigmaChecker.o GetDIE for DIE
+... is outside of its CU") appeared on every breakpoint set in this
+session -- harmless, same class as Android's "No LZMA support"
+noise, but see below where it has a real downstream effect.
+
+NEW FINDING -- real flag fails on iOS via the opaque-predicate decoy
+path, not the real algorithm:
+
+Using the real flag (the exact same one that passed cleanly on
+Android, see 2026-10-30's entry), breaking on access_granted/
+access_denied (with SIGSYS passed through, same as Android) landed
+on access_denied. Reading the real accumulator values out of the
+ucontext captured at the last svc trap (same technique as
+2026-10-30, Darwin layout this time: uc_mcontext->__ss.__x[N], and
+the ucontext pointer had to be pulled by hand from the stack slot
+`fp-0x18` via `expr -l objective-c++` rather than the named
+`ucontext` variable, since lldb's Swift-biased expression parser
+plus the broken DWARF above made the named-variable path
+unavailable):
+
+  x20 = 127  (0x7F)
+  x26 = 234  (0xEA)
+
+0x7F is not corruption or noise -- it is the exact `fake_check`
+decoy constant documented in the design's answer key as dead code
+that should NEVER execute at runtime (an opaque-predicate trap
+specifically built to mislead static analysis, same decoy that
+caught an LLM-assisted static-analysis attempt twice in the design's
+own history, v1 and v2). On iOS, with the identical input that
+correctly reached the real algorithm and produced 0x21/0xB4 on
+Android, execution instead took the dead-code decoy branch.
+
+This looks like a genuine control-flow divergence between the two
+platform ports (same shared collatz_eea_v2.S/.c source, different
+Darwin-vs-Linux svc_handler/ucontext_t codegen), not an environmental
+mystery like yesterday's Frida-detection investigation. Candidate
+causes, none yet tested: different codegen for the opaque-predicate
+dead branch under Xcode's clang vs the Android NDK's; something in
+svc_handler's Darwin-specific ucontext/mcontext64 field access
+misrouting which dispatch_table entry actually gets invoked.
+
+Not pursued further this session -- noted for next session's
+priority call before continuing the iOS collision-walkthrough demo
+(checklist's secondary goal), since the collision demo on iOS is
+moot until the real flag reaches the real algorithm in the first
+place.
+
+Next: decide whether to root-cause this before or after the
+NowSecure deadline; if deferred, the iOS collision walkthrough and
+remaining checklist items wait on this being resolved (or
+deliberately worked around) first.
+
+## 2026-10-31 — iOS validation checklist: items still open
+
+Not yet attempted this session, tracked separately from the
+opaque-predicate finding above:
+
+- Item 1 (svc dispatch annotation on iOS) -- SIGSYS was passed
+  through directly to reach the grant/deny breakpoints quickly;
+  MACE's annotation of the individual svc #0x10-#0x15 sites on
+  Darwin has not actually been observed yet.
+- Item 3 (Frida-detection reading under MACE on iOS) -- not checked
+  at all this session. Worth a direct is_frida_active()/check_frida()
+  pass, independent of whether it turns out related to the x28=1
+  seen above.
+- Item 6 (collision walkthrough on iOS) -- blocked on the real flag
+  reaching the real algorithm; parked behind the opaque-predicate
+  finding above.
+
+Visually confirmed on-device too: the UI displayed "Access Denied.
+Keep trying!" for the real flag, consistent with the register-level
+finding above.

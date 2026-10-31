@@ -2645,3 +2645,47 @@ anagram) on iOS using this same two-register patch technique at each
 submission, now that a working bypass exists; decide whether to also
 send the Cursor investigation prompt for the underlying accumulator
 bug in parallel.
+
+## 2026-10-31 — iOS collision walkthrough complete: real flag +
+reversed anagram both reach Access Granted via check_flag patch
+(iPad 7th Gen)
+
+CONFIRMED — checklist item 6 complete. Using the same two-register
+patch technique from the entry above (patch x20/x26 at check_flag's
+two real `cmp` sites, 0x104f8c180 and 0x104f8c18c, to match whatever
+the dispatch-computed magic1/magic2 actually is in x0), ran both the
+real flag and its exact-reverse anagram through iOS and confirmed
+both reach Access Granted -- mirroring the Android collision
+walkthrough from 2026-10-30.
+
+Real flag (ohgi1jnyt7rpwh6nnyfx4m8t1qojah9t):
+  breakpoint 7 (x20 cmp): x0=0x21 (33, correct), x20=0x7f (127, wrong)
+  breakpoint 8 (x26 cmp): x0=0xb4 (180, correct), x26=0xea (234, wrong)
+
+Reversed flag (t9hajoq1t8m4xfynn6hwpr7tynj1igho):
+  breakpoint 7 (x20 cmp): x0=0x21 (33, correct), x20=0x7f (127, wrong)
+  breakpoint 8 (x26 cmp): x0=0xb4 (180, correct), x26=0xea (234, wrong)
+
+Both inputs produced identical wrong accumulator values at both
+comparison sites -- not just the same magic1/magic2 (expected, those
+are compile-time constants, correctly computed on iOS per the entry
+above), but the same *wrong* x20/x26 the broken per-character
+accumulator settles on. This is a second, independent confirmation
+that the still-unresolved iOS accumulator bug is deterministic and
+character-order-independent, consistent with it being some uniform
+per-character processing error (same shape as the XOR
+order-independence the Android collision demo already exploited) --
+still not root-caused, but now with two data points instead of one.
+
+Both patched identically (mace_patch x20 0x21, mace_patch x26 0xb4
+at the respective breakpoints) and both confirmed Access Granted!
+on-device via screenshot.
+
+Checklist status: items 1 and 3 remain open (svc dispatch annotation
+on iOS not yet observed directly; Frida-detection reading under MACE
+on iOS not yet checked). Item 6 now closed.
+
+Next: items 1 and 3, if time allows before the NowSecure deadline;
+otherwise the iOS validation pass's core objectives (Swift
+annotation, opaque-predicate bug discovery + workaround, collision
+walkthrough) are complete and demo-ready.

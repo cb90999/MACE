@@ -2689,3 +2689,41 @@ Next: items 1 and 3, if time allows before the NowSecure deadline;
 otherwise the iOS validation pass's core objectives (Swift
 annotation, opaque-predicate bug discovery + workaround, collision
 walkthrough) are complete and demo-ready.
+
+## 2026-10-31 — iOS checklist item 1: custom svc #0x10-#0x15 dispatch
+correctly NOT misannotated as a real syscall (iPad 7th Gen)
+
+CONFIRMED — checklist item 1 complete. Validated both by code
+inspection and a live stop directly on one of the custom svc
+instructions (not passed through via SIGSYS this time).
+
+Code inspection (src/mace/lldb/lldb_session.py) first: MACE's two
+syscall annotators use deliberately narrow, exact operand matching --
+_is_syscall_site (Darwin) requires "0x80" in the operand string,
+_is_linux_syscall_site (Android) requires the operand be exactly
+"0". Enigma's custom svc #0x10-#0x15 range matches neither. Per the
+code's own "fail safe, not silently wrong" comments, an unmatched
+site leaves ContextSnapshot.syscall_name empty rather than guessing,
+and src/mace/display/context_panel.py:159 only renders the
+"[syscall_name] (kind)" line when syscall_name is non-empty -- so an
+unrecognized custom svc convention produces no output at all, not a
+wrong one.
+
+Live confirmation: set breakpoint --address 0x104f8c174 directly on
+check_flag's `svc #0x10` instruction (not SIGSYS-passed-through this
+time -- a real stop AT the trap itself, before it executes).
+Breakpoint 9.1 resolved cleanly, pc matched exactly, full 28-register
+MACE context panel rendered normally with no syscall/trap annotation
+line present and nothing broken -- exactly as the code predicts.
+
+This directly answers the checklist's actual concern ("stress test
+for whether MACE's annotation logic over-assumes 'the syscall table'
+is a fixed, known set"): it does not over-assume. It has no positive
+annotation for a genuinely custom convention (a reasonable future
+enhancement, not a defect), but it correctly declines to mislabel
+one as a real BSD/Mach/Linux syscall rather than guessing wrong.
+
+Checklist status update: items 1 and 6 now complete. Item 3
+(Frida-detection reading under MACE on iOS) deliberately
+deprioritized -- not important per today's call. iOS validation pass
+is effectively done for this session's scope.

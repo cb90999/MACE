@@ -2532,3 +2532,116 @@ opaque-predicate finding above:
 Visually confirmed on-device too: the UI displayed "Access Denied.
 Keep trying!" for the real flag, consistent with the register-level
 finding above.
+
+## 2026-10-31 — iOS opaque-predicate bug: workaround via check_flag register
+patch, bypass confirmed (iPad 7th Gen)
+
+CONFIRMED — real flag now reaches Access Granted on iOS via a live
+MACE register patch, working around the opaque-predicate bug logged
+earlier today rather than root-causing it. Deliberate pivot (per
+discussion): in a real assessment, debug-build root-causing of a
+third-party build divergence usually isn't available or worth the
+time; demonstrating a live bypass is the more realistic (and
+arguably stronger) MACE capability demo.
+
+Full disassembly of collatz_eea_v2_check (forced via explicit
+--start-address/--end-address, since `disassemble -n` and
+`disassemble --frame` both mis-resolved the function's true extent
+-- another symptom of the same broken-DWARF/GetDIE-outside-CU issue
+noted earlier today) revealed the real decision structure in
+`check_flag`:
+
+  check_flag:
+      svc    #0x10          ; dispatch -> returns magic1 in x0
+      mul    x9, x25, xzr   ; x9 = x25 * 0 -- ALWAYS 0, unconditionally
+      cbnz   x9, fake_check ; never taken -- confirms fake_check is
+                             ; genuinely unreachable dead code as
+                             ; documented in the design's answer key,
+                             ; not merely "rarely" taken
+      cmp    x20, x0         ; <- real comparison #1
+      b.ne   denied
+      svc    #0x14          ; dispatch -> returns magic2 in x0
+      cmp    x26, x0         ; <- real comparison #2
+      b.ne   denied
+      svc    #0x12          ; dispatch -> calls the real "granted" print
+      mov    w0, #0x1
+      b      epilogue_restore
+
+This means the actual pass/fail boolean is two plain ARM `cmp`
+instructions against values returned via the svc_handler dispatch
+mechanism -- not a `blr x8` function-pointer call itself.
+
+FAILED FIRST ATTEMPT -- blr x8 redirect (informative, not blocking):
+Before finding the above, first tried patching x8 immediately before
+the generic `blr x8` dispatch inside svc_handler (address
+0x104f8c450 this session) to redirect execution to access_granted's
+resolved entry (0x104f8c514). Two things learned from this attempt:
+
+1. This dispatch point is shared by *every* obfuscated call in the
+   algorithm (collatz_steps, eea_steps, mod_inverse, and the
+   granted/denied/fake_check outcome calls all go through the same
+   `blr x8` in svc_handler, selected by idx < 6 against
+   dispatch_table) -- not just the final verdict. Patching x8 on an
+   early, non-final hit (confirmed by a later register dump showing
+   x24 changed from 0x5f/607 pre-patch to 0xa/10 post-patch)
+   corrupted downstream computation for that run. A clean redirect
+   attempt required identifying the correct occurrence by signature
+   (idx/x9 == 3, x8 pointing at access_denied's entry 0x104f8c5c4)
+   using `breakpoint modify --ignore-count` to skip the legitimate
+   earlier hits.
+2. Even redirecting the correct (final) occurrence to
+   access_granted's address did NOT change the UI. Process ran
+   cleanly to completion (confirmed via `process interrupt` landing
+   back at the idle `mach_msg2_trap` run-loop wait, same state as
+   right after initial connect -- no crash, no hang) but the UI
+   stayed on "Access Denied. Keep trying!". access_granted's own
+   disassembly shows it does a string-decode-and-puts() console
+   print -- it is not a function whose return value the SwiftUI
+   label binds to. The actual pass/fail boolean fed back to Swift is
+   set earlier, by the two `cmp` instructions above, independent of
+   which outcome function the dispatch prints through. Useful
+   architectural finding in its own right: the "visible" grant/deny
+   message and the boolean the UI actually reads are two separate
+   things.
+
+SUCCESSFUL PATCH -- two-register workaround at check_flag's real
+comparisons:
+
+  Breakpoint 7 @ 0x104f8c180 (check_flag+12, the `cmp x20, x0` site):
+    x0  = 0x21 (33)  -- correct magic1, computed correctly via dispatch
+    x20 = 0x7f (127) -- WRONG, same value from this morning's original
+                        finding (the broken per-character accumulator,
+                        not a magic-constant problem)
+    mace_patch x20 0x21
+
+  Breakpoint 8 @ 0x104f8c18c (check_flag+24, the `cmp x26, x0` site):
+    x0  = 0xb4 (180) -- correct magic2, computed correctly via dispatch
+    x26 = 0xea (234) -- WRONG, same value from this morning's original
+                        finding
+    mace_patch x26 0xb4
+
+This confirms the root cause is isolated to x20/x26's accumulation
+during the per-character loop (both magic1 and magic2 themselves
+compute correctly on iOS) -- still not root-caused further (parked
+per today's earlier decision), but now precisely localized rather
+than a vague "divergence somewhere in the shared port."
+
+Patching the accumulator to match whatever the dispatch actually
+returns at each comparison site -- rather than hardcoding the known-
+correct magic values -- means the bypass works regardless of the
+underlying cause, which is the realistic field technique: no
+assumption required about why x20/x26 are wrong, just that the
+live-computed x0 at each cmp is trustworthy.
+
+continue after both patches landed on Access Granted!, confirmed
+visually on-device.
+
+Checklist item 6 (collision walkthrough) still blocked behind this
+-- now unblocked via the patch above, not yet attempted this
+session. Items 1 and 3 remain open per the earlier entry today.
+
+Next: attempt the collision walkthrough (real flag + reversed-flag
+anagram) on iOS using this same two-register patch technique at each
+submission, now that a working bypass exists; decide whether to also
+send the Cursor investigation prompt for the underlying accumulator
+bug in parallel.

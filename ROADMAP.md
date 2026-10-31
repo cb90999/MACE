@@ -1092,3 +1092,31 @@ external target-preparation infrastructure, not a MACE capability.
 The collatz_eea_v2 target (v2.5 above) fits this shape well: the RE
 brief is the SVC dispatch table and the two accumulators, and MACE's
 runtime walk-through is what exposes the collision live.
+
+
+## v3 demo lineup finalized; pre-v3 UI cleanup prioritized (2026-10-31)
+
+Three-app demo lineup confirmed: **eeacollatz** (iOS — opaque-predicate bug found and
+fixed this week, see BACKLOG.md's 2026-10-31 entries) for the "found a real bug" story;
+**N4TIVE ch03/ch04** (Android — Type Confusion + ANTI-DEBUG Gauntlet, both solved
+2026-10-20/21) for breadth across distinct anti-analysis techniques; **RedRunner**
+(Android — real open-source Unity/IL2CPP game, see BACKLOG.md's 2026-09-27 entry) for
+the games-market pitch specifically. SpinCube stays internal-only — it already proved the
+IL2CPP pipeline mechanically and isn't demo material.
+
+Narrative hook for the pitch: tie into the current "Reverse Engineer Anything"
+(REA)/viral-RE-tooling moment directly rather than inventing a comparison — state plainly
+that static analysis (REA or otherwise) produces structured findings, and show MACE's
+orchestration layer consuming them live. This formalizes the 2026-10-08 "Static RE Out of
+Scope" decision above into a concrete artifact — see BACKLOG.md's 2026-10-31 entry for
+the findings-JSON schema and ingestion scope.
+
+Before starting v3 work: CB wants a solid UI first. Next session's priority is the known
+display-bug backlog — the 2026-10-28 batch of three (invalid-breakpoint-ID sentinel,
+concurrent handle_stop interleaving, and their corollary) plus the 2026-08-30 batch of two
+(malformed breakpoint ID, wrong per-image ASLR offset). The 08-30 malformed-ID bug and
+the 10-28 sentinel bug are very likely the same root cause (missing sentinel-value guard
+in `_get_breakpoint_id()`) surfacing on different thread types — fixing that guard should
+close both in one pass, leaving three effectively distinct fixes: the sentinel guard, the
+per-image ASLR slide computation, and the concurrent-print interleaving in
+`MACEStopHook.handle_stop`.

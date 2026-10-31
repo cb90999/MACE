@@ -2814,3 +2814,41 @@ NowSecure webinar/demo narrative: iOS = eeacollatz (opaque-predicate defeat, fou
 fixed this week), Android = N4TIVE ch03/ch04 (type confusion + anti-debug gauntlet,
 pre-existing MACE wins) — distinct bug classes per platform, which demonstrates more than
 the same fix validated twice.
+
+
+## Findings-JSON ingestion: formalizing the static-RE-handoff decision (2026-10-31)
+
+Scopes the 2026-10-08 ROADMAP decision ("state plainly that RE was done offline and show
+its output... as the input MACE's MCP consumes") into a concrete v3 feature, prompted by
+wanting a demo narrative that rides the current "Reverse Engineer Anything" (REA) moment:
+a tool-agnostic JSON a static tool (REA or otherwise) could in principle produce, which
+MACE actually reads and acts on. Explicitly NOT wiring up REA itself — hand-authoring one
+JSON per demo app using findings already in hand from prior sessions.
+
+Draft schema:
+```json
+{
+  "target": "eeacollatz",
+  "platform": "ios",
+  "binary": "Enigma",
+  "findings": [
+    {
+      "symbol": "check_flag",
+      "address": "0x104f8c180",
+      "kind": "comparison_site",
+      "note": "cmp x20, x0 -- real pass/fail gate #1",
+      "suggested_action": "watch x20,x0; patch x20 if mismatch"
+    }
+  ]
+}
+```
+
+Minimum viable v3 scope: a loader (tentatively `mace_load_findings <path>.json`) that
+sets a breakpoint at each `address` and, when hit, annotates the context panel with that
+finding's `kind`/`note`/`suggested_action` instead of the analyst needing to already know
+what they're looking at. One JSON per demo app: eeacollatz, N4TIVE ch03/ch04, RedRunner.
+
+Open design question carried over, not yet resolved: exact field set (e.g. RVA vs. file
+offset needs explicit disambiguation per the Il2CppDumper lesson in HANDOFF.md's
+superseded-guidance list; may also want a `confidence`/`source_tool` field for when a real
+static tool's output is noisier than a hand-authored one).

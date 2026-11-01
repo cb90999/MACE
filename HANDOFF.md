@@ -1,27 +1,28 @@
 # MACE — Session Handoff
 
-Last updated: 2026-10-21
+Last updated: 2026-11-01
 Repo branch: main
-Validated through: N4TIVE's Anti-Debug Gauntlet challenge (ch04,
-com.ctf.nativectf) defeated end-to-end on the Pixel 10a — 7 checks +
-HMAC flag bypass — now through mace_patch, with a full mace_patch_history
-audit trail on record (2026-10-20 rerun superseding the 2026-10-19
-raw-lldb pass). N4TIVE's Type Confusion challenge (ch03) also solved
-end-to-end, 2026-10-21, pure MACE (no Frida) — gates 2–3 via direct
-expr-- native injection, including a new expr -i false + mid-call-
-breakpoint technique that deterministically defeats gate3's TOCTOU race;
-gate1's intended trigger proven unreachable on this ART build (unchecked
-GetStringUTFChars doesn't validate object type) and worked around via
-direct state patch; gate4 solved by a standalone script, not an lldb
-technique. Full writeup in BACKLOG.md. Android/JNI context-panel
-annotation (the "you are here" gap logged 2026-10-21) also built and
-validated live on the Pixel 10a as of 2026-10-24 -- first real use of
-mace_on's stop-hook panel on Android in this project.
-Current milestone: v2.1 CLOSED. Scudo heap-validation candidates
-(N4TIVE ch05, MobileHackingLab) both closed as dead ends — neither
-uses Scudo. N4TIVE's Anti-Debug Gauntlet and Type Confusion challenge
-are both confirmed MACE capability demonstrations. Next real step: not
-yet decided.
+Validated through: v2.5 (eeacollatz) CLOSED — iOS opaque-predicate bug
+found, root-caused, and fixed (the `charset_ok` block was undocumented
+noise gated on an always-true Frida-detection flag, not part of the
+real accumulation); iOS re-validated with zero MACE patches applied
+("Access Granted!"); Android re-validated at the register level
+(`x0 == x26` at `check_flag`'s real comparison, unpatched) before two
+unrelated interruptions (an lldb/adb disconnect and a pre-existing
+ART-level SIGSEGV, confirmed via logcat tombstone comparison to
+identical crashes predating this week's changes) cut the session
+short. Decision made NOT to chase a clean Android screenshot by
+re-running eeacollatz again — N4TIVE ch03/ch04 (already solved
+end-to-end on the Pixel 10a) stand as Android's half of the
+cross-platform demo story instead, since re-proving the same fix
+twice demonstrates less than two distinct bug classes per platform.
+v3 demo lineup finalized: iOS = eeacollatz, Android = N4TIVE
+ch03/ch04 + RedRunner (open-source Unity/IL2CPP game, replacing the
+internal-only SpinCube test app as the "real game" showcase).
+Current milestone: v2.5 CLOSED (2026-10-31). Before starting v3:
+pre-v3 UI cleanup session (today, 2026-11-01) — see Immediate next
+work below. v3 AI+MCP design/implementation targeted to start
+2026-11-02.
 
 Paste or attach this file at the start of a new chat — with this
 assistant, a different LLM, or any capable assistant — to resume MACE
@@ -51,14 +52,38 @@ and to any LLM assistant working the project, not just one specific one.
 - v2.1: CLOSED (2026-10-03) — all three polish items done and
   live-validated (get_long_help() fix, mace_patch_mem, per-platform
   connect automation).
-- v2.5: EEA/Collatz dual-platform validation target. Source materials
-  committed 2026-10-03; porting spec tightened 2026-10-26 (entry-point
-  refactor requirement, Swift/JNI naming requirements, UI-trigger
-  requirement, Enigma naming for CTF obscurity). Validation checklist
-  split into its own file, docs/v2.5-mace-validation.md, since it's
-  not a Cursor build instruction. Spec is ready to hand to Cursor;
-  actual porting work NOT YET STARTED — happens outside this chat, on
-  CB's own schedule.
+- v2.5: CLOSED (2026-10-31) — EEA/Collatz dual-platform validation
+  target (Enigma app, iOS + Android). Checklist status
+  (docs/v2.5-mace-validation.md):
+  - Item 1 (custom svc dispatch annotation): CONFIRMED, both
+    platforms (Android 2026-10-28, iOS 2026-10-31).
+  - Item 2 (register state at svc sites): CONFIRMED, both platforms
+    (same sessions as item 1).
+  - Item 3 (Frida-detection reads 0 under MACE's attach): RETIRED,
+    not achievable as written. Investigation (2026-10-30) ruled out
+    every code-level and environment-level cause for this device's
+    Frida-detection flag always reading "detected" under MACE — root
+    cause turned out to be unrelated to MACE's presence (see below).
+    CB's call (2026-10-31): drop Enigma's entire Frida-detection path
+    rather than keep chasing this, since it wasn't serving the
+    validation purpose it was designed for.
+  - Item 4 (Swift "you are here" annotation): CONFIRMED, iOS
+    (2026-10-31).
+  - Item 5 (JNI "you are here" annotation): CONFIRMED, Android
+    (2026-10-28).
+  - Item 6 (collision walkthrough, secondary goal): CONFIRMED, iOS
+    only (real flag + reversed anagram both reach "Access Granted!"
+    with identical wrong accumulator values at both comparison
+    sites). Deliberately NOT repeated on Android — see cross-platform
+    demo decision above.
+  Root cause of the iOS opaque-predicate bug: the `charset_ok` block
+  in the per-character loop was extra, undocumented noise gated on
+  `x28` (the Frida-clean flag), which always read `1` on-device — so
+  the noise always executed and corrupted the real accumulators
+  before the correct, unconditional accumulation in `char_done` could
+  run. Confirmed fixed by removing Enigma's Frida-detection path
+  entirely (Cursor implementation, validated 2026-10-31): iOS reaches
+  "Access Granted!" with zero MACE patches now.
 - Scudo heap-validation candidates: CLOSED as dead ends (2026-10-19).
   N4TIVE's Heap Feng Shui challenge (ch05) uses a custom 8-slot slab
   allocator, not Scudo. The MobileHackingLab candidate uses jemalloc,
@@ -66,40 +91,57 @@ and to any LLM assistant working the project, not just one specific one.
   candidate target for Scudo validation — stays open, needs a
   genuinely new find. See BACKLOG.md's "Post-GA Android heap/anti-
   debug/JNI validation candidates" entry for full detail.
-- N4TIVE Anti-Debug Gauntlet (ch04): defeated end-to-end 2026-10-19 —
-  all 7 checks (TracerPid, Frida /proc/self/maps, ptrace self-attach,
-  timing, self-BRK-scan, Java debugger, APK signature) plus the
-  HMAC-SHA256 flag-verification gate itself, all bypassed via register
-  patches at each check's branch-decision point. This was originally
-  run with raw lldb (`breakpoint command add` + `register write`), not
-  yet a MACE capability demonstration on the record. UPDATE 2026-10-20:
-  fully reran through plain lldb `breakpoint set` + mace_patch instead
-  (there is no `mace_set_breakpoint` command — that name only exists in
-  ROADMAP's future v3 MCP tool list; the real mechanism is lldb's own
-  breakpoint-setting plus mace_patch for the register write), with a
-  full mace_patch_history audit trail — now a confirmed MACE capability
-  demonstration alongside Frida-0x8/libantifrida.so/Unity. Full detail,
-  including a double-decoy flag mechanism and a new direct
-  function-call-injection technique, in BACKLOG.md's dated 2026-10-20
-  entry.
+- N4TIVE Anti-Debug Gauntlet (ch04) and Type Confusion (ch03): both
+  solved end-to-end on the Pixel 10a (ch04 2026-10-20, ch03
+  2026-10-21), pure MACE/lldb, no Frida. Confirmed MACE capability
+  demonstrations, and now part of the v3 demo lineup (Android's half
+  of the cross-platform story, alongside RedRunner). Full detail in
+  BACKLOG.md's dated entries.
+- v3 (AI + MCP, NowSecure demo target): demo lineup and narrative
+  finalized 2026-10-31 (see ROADMAP.md's dated entry) — iOS =
+  eeacollatz, Android = N4TIVE ch03/ch04 + RedRunner. Design/
+  implementation work targeted to start 2026-11-02, after the pre-v3
+  UI cleanup below. Includes a new scoped feature: findings-JSON
+  ingestion (a tool-agnostic JSON a static-RE tool could produce,
+  which MACE's orchestration layer actually reads and acts on —
+  sets breakpoints, annotates the context panel — rides the current
+  "Reverse Engineer Anything" moment as the pitch narrative without
+  wiring up REA itself). Draft schema and minimum viable scope in
+  BACKLOG.md's 2026-10-31 entry.
 
 ## Immediate next work
-1. v2.5's collatz_eea_v2 iOS/Android ports — spec finalized
-   2026-10-26, ready to hand to Cursor (see Active milestone above).
-   Once both exist, work through docs/v2.5-mace-validation.md's
-   checklist.
-
-(N4TIVE's Anti-Debug Gauntlet (ch04) and Type Confusion (ch03) are
-both DONE — ch04 2026-10-20, ch03 2026-10-21 — see BACKLOG.md's dated
-entries. Android/JNI context-panel annotation also DONE, 2026-10-24.)
+1. Pre-v3 UI cleanup (today, 2026-11-01) — CB wants a solid UI before
+   starting v3, especially given NowSecure's audience will be
+   skilled enough to actually read the register panel closely:
+   - Sentinel-value guard in `_get_breakpoint_id()`
+     (lldb_session.py) — missing validation against LLDB's invalid-
+     ID sentinel produces garbage breakpoint-ID text
+     ("breakpoint 18446744073709551615.1") on threads LLDB reports
+     as stopped-on-breakpoint without a real hit backing it (seen on
+     both a GCD worker thread, 2026-08-30, and ART's JIT thread,
+     2026-10-28 — almost certainly the same root cause surfacing on
+     different thread types).
+   - Per-image ASLR slide computation (`_compute_aslr_slide()`) —
+     always uses the main module's base regardless of which image
+     actually stopped, producing a meaningless offset when a stop
+     happens outside the main module (2026-08-30 finding).
+   - Concurrent `stream.Print()` interleaving in
+     `MACEStopHook.handle_stop` (stop_hook.py) when LLDB reports
+     multiple threads stopped for one event — causes spliced/
+     truncated panel output and at least one case of MACE's own
+     banner disagreeing with LLDB's stop-reason summary about which
+     breakpoint actually hit (2026-10-28 finding).
+   - `mace_options`/`mace_help` command listing every registered
+     `mace_` command with a one-line description, plus a second line
+     in the load banner pointing at it — cheap discoverability fix,
+     logged 2026-10-21, not yet scoped into a dated work item until
+     now.
+2. v3 AI+MCP design/implementation, starting 2026-11-02.
 
 Deferred, no session currently allocated:
 - N4TIVE's remaining challenges not already covered (XOR decryption,
   buffer overflow, custom stack-based VM) — not yet scoped as
   backlog-relevant the way Anti-Debug Gauntlet/Type Confusion are.
-- BayatGames/RedRunner — open-source Unity game as a richer IL2CPP
-  validation target than the SpinCube test app. See BACKLOG.md's
-  2026-09-27 entry.
 - Remaining items from BACKLOG.md's "External GUI recommendations
   feasibility assessment" — call-chain context, breakpoint status
   panel, register grouping.
@@ -118,7 +160,21 @@ Deferred, no session currently allocated:
   memory write patch -> confirmed VISIBLE on-device effect (cube
   stopped spinning). Re-validated 2026-10-02 via the new
   mace_patch_mem command against the same live process/address,
-  same visible effect.
+  same visible effect. Now internal-only — RedRunner (real
+  open-source Unity game) is the v3 demo-facing IL2CPP target
+  instead; SpinCube already did its job proving the pipeline
+  mechanically.
+
+## Validated targets (v2.1+, complete)
+- N4TIVE ch04 "ANTI-DEBUG" Gauntlet (com.ctf.nativectf) — all 7
+  checks plus the HMAC-SHA256 flag-verification gate bypassed via
+  register patches, full mace_patch_history audit trail.
+- N4TIVE ch03 "Type Confusion" (com.ctf.nativectf) — gates 2-4 solved
+  via direct native-function-call injection from lldb, zero Frida;
+  gate1 via direct state patch after its intended trigger path was
+  proven structurally unreachable on this ART build.
+- eeacollatz (Enigma, iOS + Android) — see v2.5 checklist status
+  above for full detail.
 
 ## Known-good debugger recipes (copy-paste, always current)
 Full detail and troubleshooting: docs/android-setup.md,
@@ -149,11 +205,35 @@ launch the known-good Homebrew binary with `--no-lldbinit` so MACE's
 auto-load doesn't run. Do not use that mode for normal MACE operation
 -- only when intentionally testing vanilla lldb.
 
+Android caution, not yet understood: holding an lldb breakpoint open
+on a main/UI-thread JNI call (e.g. checkFlag()) for more than ~5s
+risks Android's ANR watchdog, and outlasting the ANR dialog has
+SIGSEGV-killed the process once. ANR notifications can surface even
+after the process has already died — detection is decoupled from
+live process state, likely because lldb pausing the main thread for
+real wall-clock time queues a watchdog determination independent of
+whether the process is still alive by the time it fires. Separately,
+a genuine SIGSEGV with an ART-interpreter-only backtrace (no app
+frames) has now recurred identically (same registers, same 62-frame
+backtrace) across three different days (2026-10-28 x2, 2026-10-30,
+2026-10-31 x2) and two different app builds — treat this as a
+pre-existing, unrelated ART/lldb interaction, not an app or Frida-
+removal regression, unless new evidence says otherwise. Lesson: move
+fast through breakpoint stops once inspected, or expect to need a
+reattach after any extended pause.
+
 ### Android
 Layer 1 (device-side prep, no lldb dependency):
 `scripts/android_device_prep.sh [port] [local_lldb_server_path]` --
 kills stale lldb-server processes, pushes/launches it in platform
 mode, sets up the adb forward, all idempotently.
+
+Scripted relaunch/connect (added 2026-10-28, documented in
+docs/android-setup.md's Quick Start section 2026-10-30) — not
+app-specific, package is always passed in or cached:
+
+    scripts/android_relaunch.sh <package[/activity]>
+    scripts/android_connect.sh [package] [pid]
 
 Layer 2 (one lldb command for the full client-side sequence):
 
@@ -210,6 +290,18 @@ was the one bug found while building mace_connect_ios (2026-10-03):
 platform connect returned success but left no target, producing
 "invalid target, create a target using the 'target create' command."
 
+Reminder specific to a stuck Xcode debugserver attach: Xcode's own
+"Detach" doesn't always fully release the process — if MACE's own
+debugserver attach fails with "process is already being debugged,"
+fully Stop the Xcode run session (not just Detach), then relaunch the
+app manually from the device home screen (not via Xcode ⌘R) before
+attaching, so no debugger auto-attaches. (2026-10-31)
+
+Reminder specific to rebuild freshness: visible source changes in
+Xcode are not proof of an updated binary — check the toolbar build
+timestamp (or do a Clean Build Folder) before trusting that a
+just-rebuilt app reflects recent source edits. (2026-10-31)
+
 ## Superseded — do NOT follow these as current guidance
 Preserved as investigation history in ROADMAP.md/BACKLOG.md, but
 wrong or outdated as advice today. Do not re-derive or re-try these:
@@ -225,7 +317,9 @@ wrong or outdated as advice today. Do not re-derive or re-try these:
   + `su` is the only launch method proven working here.
 - Il2CppDumper mainline release (Perfare, v6.7.46) does NOT support
   IL2CPP metadata v39 (Unity 6.3 LTS's format) — use the
-  Doppelglower/Il2CppDumper fork instead, built from source.
+  Doppelglower/Il2CppDumper fork instead, built from source. (If
+  RedRunner's Unity version differs, re-check which dumper its
+  metadata version actually needs — don't assume this fork applies.)
 - A method's file "Offset" (raw byte offset) is NOT the same as its
   "RVA" — lldb's `breakpoint set --shlib <lib> --address <addr>`
   needs the RVA. Using Offset silently produces an unresolved
@@ -253,19 +347,31 @@ wrong or outdated as advice today. Do not re-derive or re-try these:
   reading of commands...`. Prefer `breakpoint command add -o "<cmd>"`
   (single-line form) to sidestep the multi-line entry path entirely.
   See BACKLOG.md's 2026-10-19 update for full detail.
+- `disassemble -n <func>` / `disassemble --frame` can mis-resolve a
+  function's boundary on this iOS build — SURFACED repeatedly during
+  the 2026-10-31 eeacollatz session, root cause the same broken-DWARF
+  "GetDIE ... outside of its CU" issue already known elsewhere. Use
+  explicit `--start-address`/`--end-address` (or plain named-symbol
+  disassembly, when that alone resolves correctly) instead of relying
+  on frame/name-based range resolution when the disassembly looks
+  truncated or misaligned.
+- The `charset_ok` block in Enigma's per-character accumulation loop
+  was NOT part of the real flag-check logic, despite looking like it
+  gated the accumulation — it was extra, undocumented noise layered
+  on top (see v2.5 checklist status above). Now moot: removed from
+  Enigma entirely 2026-10-31, along with the rest of the
+  Frida-detection path.
 
 ## Key reference docs (read these instead of re-deriving from scratch)
 - docs/android-setup.md — full Android lldb-server/connect sequence,
-  troubleshooting for every gotcha in the recipe above
+  troubleshooting for every gotcha in the recipe above, plus the
+  scripted Quick Start workflow
 - docs/ios-setup.md — equivalent for iOS/debugserver
 - docs/debugging-playbook.md — accumulated RE technique/judgment rules
-- docs/collatz-eea-v2-porting-notes.md — v2.5 handoff spec for Cursor
-- docs/v2.5-mace-validation.md — v2.5 validation checklist (for
-  CB/MACE once Cursor's ports exist, not a Cursor instruction)
-- scripts/android_device_prep.sh — automated Android device-prep
-  (Layer 1 of connect automation)
-- targets/src/collatz_eea_v2.s, collatz_eea_v2_helpers.c — v2.5
-  source materials (macOS-native; iOS/Android ports not yet built)
+- docs/v2.5-mace-validation.md — v2.5 validation checklist, now
+  CLOSED (see Active milestone above for final item-by-item status)
+- scripts/android_device_prep.sh, android_relaunch.sh,
+  android_connect.sh — automated Android device-prep/relaunch/connect
 - ROADMAP.md — current priority sequencing (superseded conclusions
   are explicitly tagged inline, not just here)
 - BACKLOG.md — parked research threads, feasibility assessments,

@@ -2900,22 +2900,31 @@ Two real findings, both worth fixing before the NowSecure demo:
    worse than showing one fewer frame.
 
 2. Region labeling (`_classify_memory_region`, lldb_session.py, committed today as
-   91a7050/ac46afe/781c491) is real but intermittent. `x28 = 0x016b86feb0` was correctly
-   labeled `[heap/stack]` on two consecutive stops, then on a third stop showed the same
-   exact literal address value with no label at all (plain decimal), with no code change
-   in between. Same address, different outcome -- not explainable by the "large value
-   that genuinely isn't a pointer" case already confirmed working correctly elsewhere in
-   this same session (several collatz-routine arithmetic registers >= 0x100000000
-   correctly stayed unlabeled throughout, which is the intended discriminating behavior).
-   Suspected root cause: `SBProcess.GetMemoryRegionInfo()` over the gdb-remote connection
-   intermittently failing/timing out, and the current `try/except Exception: return None`
-   in `_classify_memory_region` can't distinguish "genuinely unmapped" from "query
-   failed" -- both silently fall back to the same unlabeled decimal display. Fix
-   direction: check `err.Fail()`'s actual error string/type before treating a failure as
-   "unmapped," and consider one retry on a transient-looking failure rather than giving
-   up after a single query. Not yet reproduced a third time to confirm it's connection
-   flakiness specifically rather than something else -- worth a repeat pass before
-   trusting this fully in front of NowSecure.
+   91a7050/ac46afe/781c491) is real but was initially mis-diagnosed as intermittent.
+   `x28 = 0x016b86feb0` was correctly labeled `[heap/stack]` on two consecutive stops,
+   then on a third stop showed the same exact literal address value with no label at all
+   (plain decimal), with no code change in between -- initially suspected as
+   `GetMemoryRegionInfo()` flakiness and "fixed" with a one-retry guard (commit
+   6e0439c). That fix did NOT resolve it: after a full lldb restart/reattach, zero
+   registers got labeled on the next real `check_flag` hit. Ran lldb's own
+   `memory region <addr>` directly to bypass our code entirely -- it returned
+   `error: qMemoryRegionInfo is not supported`. Real root cause: this specific iOS
+   jailbreak debugserver build (`/var/jb/usr/lib/llvm-16/bin/debugserver`,
+   lldb-16.0.0) doesn't reliably support the qMemoryRegionInfo packet at all -- a
+   hard capability gap, not a transient network failure a retry could fix.
+   `_classify_memory_region` was gating its module/section resolution path (which
+   needs nothing from the remote stub -- pure `SBTarget.ResolveLoadAddress` against
+   LLDB's own already-loaded image list) behind that same unreliable query, silently
+   discarding a classification that never depended on it. FIXED (commit e94b70b):
+   module/section resolution is now tried first; the coarse heap/stack fallback
+   still needs a working memory-region query and correctly stays unavailable (safe
+   decimal fallback, not a wrong guess) when that capability is missing -- so on this
+   particular debugserver build, raw stack/heap pointers like `x28` will not get a
+   `[heap/stack]` label, while anything resolving into Enigma's own binary or a
+   loaded system library will. Worth checking whether the demo-day debugserver build
+   (NowSecure's own environment, or whichever device is used) supports
+   qMemoryRegionInfo, since that determines how much of the heap/stack labeling
+   actually shows up live.
 
 Neither finding blocks using the panel as-is (both degrade gracefully to the pre-existing
 behavior rather than showing something actively wrong), but both are exactly the kind of

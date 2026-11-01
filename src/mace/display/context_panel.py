@@ -35,9 +35,16 @@ def _separator(label: str) -> str:
     return f"{Color.CYAN}{label_str}{'─' * max(remaining, 4)}{Color.RESET}"
 
 
-def _format_register_line(name, hex_val, decimal, ascii_val, w_val, highlight=False, signed_val=None):
+def _format_register_line(name, hex_val, decimal, ascii_val, w_val, highlight=False, signed_val=None, region_label=None):
     color = Color.YELLOW if highlight else Color.RESET
-    line = f"  {color}{name:<6}{Color.RESET}  {hex_val}  # {decimal}u"
+    # When a region label resolved (address-shaped value, e.g. a heap or
+    # stack pointer), show that instead of the raw decimal -- a 19-digit
+    # unsigned number tells a researcher nothing hex doesn't already show
+    # better; "[heap]" or "[Enigma.__TEXT]" is the actually useful signal.
+    if region_label:
+        line = f"  {color}{name:<6}{Color.RESET}  {hex_val}  # [{region_label}]"
+    else:
+        line = f"  {color}{name:<6}{Color.RESET}  {hex_val}  # {decimal}u"
     if signed_val is not None:
         line += f" ({signed_val}i)"
     if w_val is not None:
@@ -72,7 +79,8 @@ def render_registers(snap: ContextSnapshot,
             # ~1.8e19 unsigned number) — scoped to x0-x28 only, never the
             # always-address fp/lr/sp/pc registers below.
             signed_val = snap.as_signed(j) if snap.x[j] >= (1 << 63) else None
-            lines.append(_format_register_line(f"x{j}", hex_val, decimal, ascii_v, w_val, highlight, signed_val))
+            region_label = snap.region_labels[j]
+            lines.append(_format_register_line(f"x{j}", hex_val, decimal, ascii_v, w_val, highlight, signed_val, region_label))
     lines.append("")
     lines.append(f"  {'fp':<6}  0x{snap.fp:016x}  # {snap.fp}u")
     lines.append(f"  {'lr':<6}  0x{snap.lr:016x}  # {snap.lr}u")

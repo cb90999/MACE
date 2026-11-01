@@ -71,6 +71,19 @@ class ContextSnapshot:
                                     # _get_call_chain in lldb_session.py); full
                                     # backtrace stays available via lldb's own bt
 
+    # --- Memory region labels for address-shaped registers ---
+    region_labels: list[Optional[str]] = field(default_factory=lambda: [None] * 29)
+                                    # x0-x28, parallel to `x` -- e.g. "heap",
+                                    # "stack", or "<module>.<section>" (e.g.
+                                    # "Enigma.__TEXT"). Populated only for
+                                    # address-shaped values via
+                                    # _classify_memory_region() in
+                                    # lldb_session.py. None means either the
+                                    # value isn't address-shaped or its region
+                                    # couldn't be classified -- display falls
+                                    # back to the raw decimal rather than
+                                    # showing a guessed label.
+
     # --- Derived helpers ---
 
     def w(self, n: int) -> int:

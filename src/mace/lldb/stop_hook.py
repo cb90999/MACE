@@ -107,7 +107,10 @@ def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand("command script add -c stop_hook.MACEHwBreakHistory mace_hw_break_history")
     debugger.HandleCommand("command script add -c stop_hook.MACEConnectAndroid mace_connect_android")
     debugger.HandleCommand("command script add -c stop_hook.MACEConnectIos mace_connect_ios")
+    debugger.HandleCommand("command script add -c stop_hook.MACEOptions mace_options")
+    debugger.HandleCommand("command script add -c stop_hook.MACEOptions mace_help")
     print("[MACE] Loaded. Use 'mace_on' after setting breakpoints to enable.")
+    print("[MACE] Run 'mace_options' (or 'mace_help') to see every available command.")
 
 class MACESwiftLoad:
     """mace_swift_load <path> — load Swift type context from local binary path."""
@@ -1006,6 +1009,57 @@ class MACEConnectIos:
 
     def get_short_help(self):
         return "Run the iOS connect sequence (platform select through process connect) in one command"
+
+    def get_long_help(self):
+        return inspect.cleandoc(self.__doc__)
+
+
+
+# Registry for mace_options/mace_help -- (command name, one-line
+# description). Descriptions call each command class's own
+# get_short_help() (none of them actually use self, so this works as
+# an unbound call with a dummy self) rather than duplicating the text,
+# so this list can't drift from what `help <command>` already shows.
+# mace_on/mace_off are function-based, not classes, so their
+# descriptions are hardcoded here to match their own docstrings.
+_MACE_COMMANDS = [
+    ("mace_on",               "Enable MACE context panel on every stop"),
+    ("mace_off",              "Disable MACE context panel"),
+    ("mace_swift_load",       MACESwiftLoad.get_short_help(None)),
+    ("mace_patch",            MACEPatch.get_short_help(None)),
+    ("mace_patch_history",    MACEPatchHistory.get_short_help(None)),
+    ("mace_patch_mem",        MACEPatchMem.get_short_help(None)),
+    ("mace_patch_mem_history", MACEPatchMemHistory.get_short_help(None)),
+    ("mace_grep",             MACEGrep.get_short_help(None)),
+    ("mace_search",           MACESearch.get_short_help(None)),
+    ("mace_hw_break",         MACEHwBreak.get_short_help(None)),
+    ("mace_hw_break_history", MACEHwBreakHistory.get_short_help(None)),
+    ("mace_connect_android",  MACEConnectAndroid.get_short_help(None)),
+    ("mace_connect_ios",      MACEConnectIos.get_short_help(None)),
+    ("mace_options",          "List every mace_ command with a one-line description"),
+]
+
+
+class MACEOptions:
+    """
+    mace_options (alias: mace_help) — list every registered mace_
+    command with a one-line description, so the full command surface
+    is visible without having to remember it exists.
+    """
+
+    def __init__(self, debugger, internal_dict):
+        pass
+
+    def __call__(self, debugger, command, exe_ctx, result, internal_dict=None):
+        result.AppendMessage(f"{Color.BOLD}── MACE commands ──{Color.RESET}")
+        width = max(len(name) for name, _ in _MACE_COMMANDS)
+        for name, desc in _MACE_COMMANDS:
+            result.AppendMessage(f"  {Color.WHITE}{name:<{width}}{Color.RESET}  {desc}")
+        result.AppendMessage("")
+        result.AppendMessage("Use 'help <command>' for full usage/examples on any of these.")
+
+    def get_short_help(self):
+        return "List every mace_ command with a one-line description"
 
     def get_long_help(self):
         return inspect.cleandoc(self.__doc__)

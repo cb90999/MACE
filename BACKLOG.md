@@ -2867,3 +2867,57 @@ Open design question carried over, not yet resolved: exact field set (e.g. RVA v
 offset needs explicit disambiguation per the Il2CppDumper lesson in HANDOFF.md's
 superseded-guidance list; may also want a `confidence`/`source_tool` field for when a real
 static tool's output is noisier than a hand-authored one).
+
+
+## Device spot-check of 2026-11-01 UI batch: two real findings (2026-11-01)
+Source: live eeacollatz/Enigma session on Chida's iPad, verifying the 8 UI-cleanup
+commits plus memory-region labeling from today's session
+
+6 of 9 items confirmed clean on first live pass: breakpoint-ID sentinel guard
+(`breakpoint 1.1` rendered correctly), ASLR slide fix (`pc - slide = offset` verified
+exactly against two separate stops), `mace_options`/`mace_help`, register grouping
+(args/temps/callee-saved headers correct), `mace_watch`, `mace_breakpoints` (correct
+RESOLVED/PENDING status and hit count, 0 -> 1 across the real hit). `handle_stop`'s
+threading lock was not exercisable -- this session never produced a genuine multi-thread
+concurrent stop, so it remains validated only by its original mock reasoning (see
+2026-10-31 HANDOFF/ROADMAP entries), not live.
+
+Two real findings, both worth fixing before the NowSecure demo:
+
+1. Call chain (`_get_call_chain`, lldb_session.py) is reliable at depth 0-1 but not
+   depth 2+. Two separate stops inside `collatz_eea_v2_check`/`denied` (same function,
+   reached via internal `b` branch, not call/return -- fp/lr byte-identical between the
+   two stops) showed frame #2 as `Swift.String.withCString<...>` on the first stop and
+   as a duplicate of frame #1 (`closure #1 ... in EnigmaChecker.check`) on the second,
+   despite the actual caller chain above frame #1 being unchanged. Likely LLDB's own
+   frame-pointer unwinding becoming unreliable two frames up in this optimized Swift
+   binary, not a bug in the 3-line `_get_call_chain` loop itself (plain
+   `thread.GetFrameAtIndex(i)` calls, nothing unusual). Fix direction: either cap
+   `_get_call_chain`'s effective depth at 2 (#0/#1 only) until a more robust unwind
+   method is found, or visibly flag frames beyond #1 as lower-confidence in the display
+   rather than presenting all three with equal certainty -- the whole point of `call_chain`
+   is passive ground truth, so showing a wrong frame with no hint it might be wrong is
+   worse than showing one fewer frame.
+
+2. Region labeling (`_classify_memory_region`, lldb_session.py, committed today as
+   91a7050/ac46afe/781c491) is real but intermittent. `x28 = 0x016b86feb0` was correctly
+   labeled `[heap/stack]` on two consecutive stops, then on a third stop showed the same
+   exact literal address value with no label at all (plain decimal), with no code change
+   in between. Same address, different outcome -- not explainable by the "large value
+   that genuinely isn't a pointer" case already confirmed working correctly elsewhere in
+   this same session (several collatz-routine arithmetic registers >= 0x100000000
+   correctly stayed unlabeled throughout, which is the intended discriminating behavior).
+   Suspected root cause: `SBProcess.GetMemoryRegionInfo()` over the gdb-remote connection
+   intermittently failing/timing out, and the current `try/except Exception: return None`
+   in `_classify_memory_region` can't distinguish "genuinely unmapped" from "query
+   failed" -- both silently fall back to the same unlabeled decimal display. Fix
+   direction: check `err.Fail()`'s actual error string/type before treating a failure as
+   "unmapped," and consider one retry on a transient-looking failure rather than giving
+   up after a single query. Not yet reproduced a third time to confirm it's connection
+   flakiness specifically rather than something else -- worth a repeat pass before
+   trusting this fully in front of NowSecure.
+
+Neither finding blocks using the panel as-is (both degrade gracefully to the pre-existing
+behavior rather than showing something actively wrong), but both are exactly the kind of
+inconsistency an expert audience would notice, consistent with CB's reason for prioritizing
+this whole UI pass this week. Not yet fixed.

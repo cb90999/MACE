@@ -19,10 +19,12 @@ twice demonstrates less than two distinct bug classes per platform.
 v3 demo lineup finalized: iOS = eeacollatz, Android = N4TIVE
 ch03/ch04 + RedRunner (open-source Unity/IL2CPP game, replacing the
 internal-only SpinCube test app as the "real game" showcase).
-Current milestone: v2.5 CLOSED (2026-10-31). Before starting v3:
-pre-v3 UI cleanup session (today, 2026-11-01) — see Immediate next
-work below. v3 AI+MCP design/implementation targeted to start
-2026-11-02.
+Current milestone: pre-v3 UI cleanup CLOSED (2026-11-01) — 8 UI/
+discoverability fixes plus full memory-region labeling implemented,
+committed, and live-verified on eeacollatz/Enigma (iOS); two real
+findings surfaced during live verification were root-caused and
+fixed the same session (see Active milestone below for full detail).
+v3 AI+MCP design/implementation starts next session, 2026-11-02.
 
 Paste or attach this file at the start of a new chat — with this
 assistant, a different LLM, or any capable assistant — to resume MACE
@@ -84,6 +86,45 @@ and to any LLM assistant working the project, not just one specific one.
   run. Confirmed fixed by removing Enigma's Frida-detection path
   entirely (Cursor implementation, validated 2026-10-31): iOS reaches
   "Access Granted!" with zero MACE patches now.
+- Pre-v3 UI cleanup: CLOSED (2026-11-01). Two batches:
+  1. Four items originally scoped (2026-10-31 planning session):
+     breakpoint-ID sentinel guard, per-image ASLR slide fix,
+     `handle_stop` thread-interleaving lock, `mace_options`/
+     `mace_help` command listing.
+  2. Four additional light-lift items CB approved after asking "any
+     other UI improvements that are not heavy lifts": register
+     grouping by AAPCS64 role (args/temps/callee-saved), `mace_watch`
+     (runtime-configurable watched registers, replacing hardcoded
+     WATCH_REGS), compact call-chain context (auto-displayed, capped
+     depth), `mace_breakpoints` (breakpoint resolution status/hit
+     count panel).
+  Plus, raised directly by CB mid-session: full memory-region
+  labeling (Context Panel v2 item 3, originally logged 2026-08-30) —
+  `_classify_memory_region()` replaces a meaningless raw decimal with
+  `[heap/stack]` or `[<module>.<section>]` for address-shaped
+  registers.
+  All 8 items plus region labeling live-verified on a real eeacollatz/
+  Enigma iOS session the same day. Two real findings surfaced during
+  that verification, both root-caused and fixed same-session:
+  - Call chain was reliable at depth 0-1 but not depth 2+ on this
+    binary's optimized Swift unwind (two stops with a byte-identical
+    caller frame produced two different, inconsistent values for
+    frame #2). Fixed by capping the default depth at 2.
+  - Region labeling appeared intermittent at first (same literal
+    stack address labeled on one stop, not on the next) — a one-retry
+    fix did NOT resolve it. Direct diagnosis via lldb's own `memory
+    region <addr>` command revealed the real cause: this specific iOS
+    jailbreak debugserver build doesn't support the qMemoryRegionInfo
+    packet at all (a hard capability gap, not flakiness).
+    `_classify_memory_region()` was gating its module/section
+    resolution path — which needs nothing from the remote stub —
+    behind that same unreliable query. Fixed by trying module/section
+    resolution first; raw heap/stack pointers (not backed by any
+    loaded image) will not get a coarse label on a debugserver build
+    without qMemoryRegionInfo support, but this is now a documented,
+    understood limitation rather than a silent inconsistency. See
+    BACKLOG.md's 2026-11-01 entries for full detail and commit
+    references.
 - Scudo heap-validation candidates: CLOSED as dead ends (2026-10-19).
   N4TIVE's Heap Feng Shui challenge (ch05) uses a custom 8-slot slab
   allocator, not Scudo. The MobileHackingLab candidate uses jemalloc,
@@ -100,8 +141,8 @@ and to any LLM assistant working the project, not just one specific one.
 - v3 (AI + MCP, NowSecure demo target): demo lineup and narrative
   finalized 2026-10-31 (see ROADMAP.md's dated entry) — iOS =
   eeacollatz, Android = N4TIVE ch03/ch04 + RedRunner. Design/
-  implementation work targeted to start 2026-11-02, after the pre-v3
-  UI cleanup below. Includes a new scoped feature: findings-JSON
+  implementation work starts 2026-11-02, now that the pre-v3 UI
+  cleanup above is closed. Includes a new scoped feature: findings-JSON
   ingestion (a tool-agnostic JSON a static-RE tool could produce,
   which MACE's orchestration layer actually reads and acts on —
   sets breakpoints, annotates the context panel — rides the current
@@ -110,43 +151,18 @@ and to any LLM assistant working the project, not just one specific one.
   BACKLOG.md's 2026-10-31 entry.
 
 ## Immediate next work
-1. Pre-v3 UI cleanup (today, 2026-11-01) — CB wants a solid UI before
-   starting v3, especially given NowSecure's audience will be
-   skilled enough to actually read the register panel closely:
-   - Sentinel-value guard in `_get_breakpoint_id()`
-     (lldb_session.py) — missing validation against LLDB's invalid-
-     ID sentinel produces garbage breakpoint-ID text
-     ("breakpoint 18446744073709551615.1") on threads LLDB reports
-     as stopped-on-breakpoint without a real hit backing it (seen on
-     both a GCD worker thread, 2026-08-30, and ART's JIT thread,
-     2026-10-28 — almost certainly the same root cause surfacing on
-     different thread types).
-   - Per-image ASLR slide computation (`_compute_aslr_slide()`) —
-     always uses the main module's base regardless of which image
-     actually stopped, producing a meaningless offset when a stop
-     happens outside the main module (2026-08-30 finding).
-   - Concurrent `stream.Print()` interleaving in
-     `MACEStopHook.handle_stop` (stop_hook.py) when LLDB reports
-     multiple threads stopped for one event — causes spliced/
-     truncated panel output and at least one case of MACE's own
-     banner disagreeing with LLDB's stop-reason summary about which
-     breakpoint actually hit (2026-10-28 finding).
-   - `mace_options`/`mace_help` command listing every registered
-     `mace_` command with a one-line description, plus a second line
-     in the load banner pointing at it — cheap discoverability fix,
-     logged 2026-10-21, not yet scoped into a dated work item until
-     now.
-2. v3 AI+MCP design/implementation, starting 2026-11-02.
+1. v3 AI+MCP design/implementation, starting 2026-11-02 — pre-v3 UI
+   cleanup (above) is done; this is now the only item on deck.
 
 Deferred, no session currently allocated:
 - N4TIVE's remaining challenges not already covered (XOR decryption,
   buffer overflow, custom stack-based VM) — not yet scoped as
   backlog-relevant the way Anti-Debug Gauntlet/Type Confusion are.
-- Remaining items from BACKLOG.md's "External GUI recommendations
-  feasibility assessment" — call-chain context, breakpoint status
-  panel, register grouping.
-- Configurable watched registers (WATCH_REGS hardcoded) — see
-  BACKLOG.md's 2026-10-02 entry.
+- Whether the demo-day debugserver build (NowSecure's own
+  environment, or whichever device ends up used) supports
+  qMemoryRegionInfo — determines how much of the heap/stack region
+  labeling shows up live versus falling back to decimal. Worth
+  checking ahead of the actual demo, not just this dev iPad.
 
 ## Validated targets (v2, complete — see ROADMAP.md Priority 1)
 - Frida-0x8 — mace_patch register flip, live syscall annotation.
@@ -197,7 +213,14 @@ NDK's own clang/lldb toolchain version 18, not a standalone
 lldb-server release version.
 Device baseline: Pixel 10a, Android 16 / API 36, arm64-v8a, Magisk
 root. iOS baseline: iPad 7th Gen, A10, iOS 18.7.2, palera1n
-semi-tethered jailbreak.
+semi-tethered jailbreak. This iOS device's debugserver
+(`/var/jb/usr/lib/llvm-16/bin/debugserver`, lldb-16.0.0) does NOT
+support the qMemoryRegionInfo packet — confirmed 2026-11-01 via a
+direct `memory region <addr>` test returning "error:
+qMemoryRegionInfo is not supported." Affects only the region-labeling
+feature's coarse heap/stack fallback; module/section labels (which
+don't need that packet) work normally. Worth re-checking on whichever
+device/debugserver build is actually used for the NowSecure demo.
 
 When validating LLDB itself independently of MACE (e.g. isolating
 whether a problem is MACE's stop-hook logic or lldb's own behavior),
@@ -302,6 +325,18 @@ Xcode are not proof of an updated binary — check the toolbar build
 timestamp (or do a Clean Build Folder) before trusting that a
 just-rebuilt app reflects recent source edits. (2026-10-31)
 
+Reminder specific to debugserver lifecycle: `debugserver` launched
+the way documented above (one-shot per connection) exits when lldb
+quits/detaches on the Mac side — it does NOT stay up to accept a new
+connection. After any `quit`/detach, check the iPad terminal and
+relaunch `debugserver 0.0.0.0:1234 --attach=<PID>` (same PID, if the
+app process itself wasn't killed) before reconnecting. Confirmed live
+2026-11-01. Separately, `mace_connect_ios` leaves the process stopped
+at the initial attach SIGSTOP — `continue`/`c` is required before the
+app's UI becomes responsive again, not just before a breakpoint hit;
+forgetting this looked like a broken text field mid-session
+(2026-11-01) but was just the paused process.
+
 ## Superseded — do NOT follow these as current guidance
 Preserved as investigation history in ROADMAP.md/BACKLOG.md, but
 wrong or outdated as advice today. Do not re-derive or re-try these:
@@ -361,6 +396,14 @@ wrong or outdated as advice today. Do not re-derive or re-try these:
   on top (see v2.5 checklist status above). Now moot: removed from
   Enigma entirely 2026-10-31, along with the rest of the
   Frida-detection path.
+- Region labeling's coarse `[heap/stack]` fallback flipping on/off
+  for the same literal address across stops — initially suspected as
+  `GetMemoryRegionInfo()` network flakiness and "fixed" with a retry
+  guard (commit 6e0439c) — SUPERSEDED 2026-11-01. The retry did not
+  fix it; the real cause is this iOS device's debugserver not
+  supporting qMemoryRegionInfo at all (see device baseline note
+  above). Real fix (commit e94b70b) reorders classification to try
+  module/section resolution first, which doesn't need that packet.
 
 ## Key reference docs (read these instead of re-deriving from scratch)
 - docs/android-setup.md — full Android lldb-server/connect sequence,

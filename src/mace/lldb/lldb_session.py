@@ -288,12 +288,23 @@ def _get_breakpoint_id(thread: lldb.SBThread) -> str:
     is a breakpoint hit, matching the format LLDB itself prints
     ("stop reason = breakpoint 2.1"). Returns "" otherwise, or if the
     breakpoint has multiple hit locations and we can't disambiguate.
+
+    Guards against LLDB reporting eStopReasonBreakpoint with no real
+    breakpoint-hit data backing it (observed on ART's JIT thread and on
+    a GCD worker thread) -- GetStopReasonDataAtIndex() returns -1
+    reinterpreted as UINT64_MAX in that case, which would otherwise
+    render as garbage like "breakpoint 18446744073709551615.1".
     """
     try:
         if thread.GetStopReason() != lldb.eStopReasonBreakpoint:
             return ""
+        if thread.GetStopReasonDataCount() < 2:
+            return ""
         bp_id  = thread.GetStopReasonDataAtIndex(0)
         loc_id = thread.GetStopReasonDataAtIndex(1)
+        _INVALID = 0xFFFFFFFFFFFFFFFF
+        if bp_id >= _INVALID or loc_id >= _INVALID:
+            return ""
         return f"{bp_id}.{loc_id}"
     except Exception:
         return ""

@@ -41,13 +41,20 @@ def _detect_stripped(target: lldb.SBTarget) -> bool:
     return sym_count < 5
 
 
-def _compute_aslr_slide(target: lldb.SBTarget) -> int:
+def _compute_aslr_slide(target: lldb.SBTarget, pc: int) -> int:
     """
-    Compute ASLR slide for the main module.
-    slide = load_address - file_address of the module header.
-    Returns 0 if not computable (no ASLR, or module not loaded).
+    Compute ASLR slide for the module that actually contains pc.
+    slide = load_address - file_address of that module's header.
+    Returns 0 if not computable (no ASLR, pc doesn't resolve to any
+    loaded module, or the module's header addresses aren't available) --
+    deliberately suppresses the field rather than returning the WRONG
+    module's slide. Previously always used module index 0 (the main
+    binary) regardless of which image pc was actually in, producing a
+    nonsensical offset whenever the stop landed inside a different
+    image (e.g. a system library, on another thread).
     """
-    module = target.GetModuleAtIndex(0)
+    addr = target.ResolveLoadAddress(pc)
+    module = addr.GetModule()
     if not module.IsValid():
         return 0
 
@@ -91,7 +98,7 @@ def snapshot_from_frame(frame: lldb.SBFrame,
     snap.stop_reason = stop_reason or _get_stop_reason(frame.GetThread())
     snap.breakpoint_id = _get_breakpoint_id(frame.GetThread())
     snap.iteration   = iteration
-    snap.aslr_slide  = _compute_aslr_slide(target)
+    snap.aslr_slide  = _compute_aslr_slide(target, snap.pc)
 
     # --- Passive objc_msgSend annotation ---
     _annotate_objc_call(snap, frame, target)

@@ -2930,3 +2930,34 @@ Neither finding blocks using the panel as-is (both degrade gracefully to the pre
 behavior rather than showing something actively wrong), but both are exactly the kind of
 inconsistency an expert audience would notice, consistent with CB's reason for prioritizing
 this whole UI pass this week. Not yet fixed.
+
+
+## Alternative heap/stack classification not dependent on qMemoryRegionInfo (2026-11-01)
+Source: CB discussion, immediately after closing out the region-labeling capability-gap
+finding above
+
+Parked for after v3, not urgent -- `_classify_memory_region`'s module/section path already
+works without this (commit e94b70b); this would only recover the coarse `[heap/stack]`
+label on debugserver builds that don't support qMemoryRegionInfo, like the current dev iPad.
+
+Two candidate approaches, neither dependent on the remote stub's memory-region packet:
+
+1. Stack detection -- compare a candidate address against the current thread's own `sp`
+   (already read every stop via `_read_gpr`). Anything within a plausible stack-size window
+   of `sp` is almost certainly stack. No new LLDB API needed, no inferior code execution,
+   essentially free.
+
+2. Heap detection -- call `malloc_size()` (or `malloc_zone_from_ptr()`) via LLDB expression
+   evaluation (`SBFrame.EvaluateExpression`/`SBTarget.EvaluateExpression`, which runs real
+   code in the attached process). `malloc_size(ptr)` returns the allocation size if `ptr` is
+   a live heap allocation, 0 otherwise -- asks the inferior's own allocator directly, no
+   `qMemoryRegionInfo` packet involved at all. Standard technique in iOS/macOS debugging
+   tooling. Tradeoff: unlike the stack check, this executes code in the target process on
+   every address checked, so cost/safety at scale (how many address-shaped registers per
+   stop, how often) needs real consideration before wiring it into every `snapshot_from_frame`
+   call the way `_classify_memory_region` currently runs unconditionally.
+
+Also worth confirming before assuming this is a universal problem: today's finding was
+iOS/`debugserver`-specific. Android's `lldb-server` typically backs `qMemoryRegionInfo` with
+`/proc/pid/maps`, so it may already work fine there and this may turn out to be a
+one-platform gap, not something needing a cross-platform fallback at all.

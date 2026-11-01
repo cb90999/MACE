@@ -84,7 +84,7 @@ def mace_on(debugger, command, result, internal_dict):
     global _hook_id, _iteration
     _iteration = 0
     debugger.HandleCommand("target stop-hook add -P stop_hook.MACEStopHook")
-    print("[MACE] Context panel enabled. x0/x1 watched.")
+    print(f"[MACE] Context panel enabled. {', '.join(f'x{r}' for r in WATCH_REGS)} watched.")
 
 
 def mace_off(debugger, command, result, internal_dict):
@@ -101,6 +101,7 @@ def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand("command script add -c stop_hook.MACEPatchHistory mace_patch_history")
     debugger.HandleCommand("command script add -c stop_hook.MACEPatchMem mace_patch_mem")
     debugger.HandleCommand("command script add -c stop_hook.MACEPatchMemHistory mace_patch_mem_history")
+    debugger.HandleCommand("command script add -c stop_hook.MACEWatch mace_watch")
     debugger.HandleCommand("command script add -c stop_hook.MACEGrep mace_grep")
     debugger.HandleCommand("command script add -c stop_hook.MACESearch mace_search")
     debugger.HandleCommand("command script add -c stop_hook.MACEHwBreak mace_hw_break")
@@ -440,6 +441,63 @@ class MACEPatchMemHistory:
 
     def get_short_help(self):
         return "Show (or clear) the mace_patch_mem audit trail for this session"
+
+    def get_long_help(self):
+        return inspect.cleandoc(self.__doc__)
+
+class MACEWatch:
+    """
+    mace_watch <reg> [<reg> ...] — set which general-purpose registers
+    (x0-x28) are highlighted in the context panel, replacing the
+    previous hardcoded WATCH_REGS = [0, 1]. Persists across stops
+    within a session, independent of mace_on/mace_off's enable/
+    disable state -- changing the watch list doesn't require toggling
+    the panel off and back on.
+
+    mace_watch with no arguments shows the current watch list.
+    mace_watch clear resets to the default (x0, x1).
+
+    Examples:
+      mace_watch x0 x8 x19
+      mace_watch 0 8 19
+      mace_watch clear
+    """
+
+    def __init__(self, debugger, internal_dict):
+        pass
+
+    def __call__(self, debugger, command, exe_ctx, result, internal_dict=None):
+        global WATCH_REGS
+        parts = command.strip().split()
+
+        if not parts:
+            regs_str = ", ".join(f"x{r}" for r in WATCH_REGS) if WATCH_REGS else "(none)"
+            result.AppendMessage(f"[MACE] Currently watching: {regs_str}")
+            return
+
+        if parts == ["clear"]:
+            WATCH_REGS = [0, 1]
+            result.AppendMessage("[MACE] Watch list reset to default: x0, x1")
+            return
+
+        new_regs = []
+        for part in parts:
+            name = part.strip().lower().lstrip("x")
+            try:
+                reg = int(name, 0)
+            except ValueError:
+                result.AppendMessage(f"[MACE] Could not parse '{part}' as a register (expected e.g. x0 or 0).")
+                return
+            if not (0 <= reg <= 28):
+                result.AppendMessage(f"[MACE] Register x{reg} out of range -- must be x0-x28.")
+                return
+            new_regs.append(reg)
+
+        WATCH_REGS = new_regs
+        result.AppendMessage(f"[MACE] Now watching: {', '.join(f'x{r}' for r in WATCH_REGS)}")
+
+    def get_short_help(self):
+        return "Set which registers (x0-x28) are highlighted in the context panel"
 
     def get_long_help(self):
         return inspect.cleandoc(self.__doc__)
@@ -1036,6 +1094,7 @@ _MACE_COMMANDS = [
     ("mace_hw_break_history", MACEHwBreakHistory.get_short_help(None)),
     ("mace_connect_android",  MACEConnectAndroid.get_short_help(None)),
     ("mace_connect_ios",      MACEConnectIos.get_short_help(None)),
+    ("mace_watch",            MACEWatch.get_short_help(None)),
     ("mace_options",          "List every mace_ command with a one-line description"),
 ]
 

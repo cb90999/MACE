@@ -47,23 +47,32 @@ def _format_register_line(name, hex_val, decimal, ascii_val, w_val, highlight=Fa
     return line
 
 
+_REGISTER_GROUPS = [
+    ("args",         range(0, 8)),    # x0-x7  (arguments/results)
+    ("temps",        range(8, 19)),   # x8-x18 (caller-saved temps + IP0/IP1 + platform reg)
+    ("callee-saved", range(19, 29)),  # x19-x28
+]
+
+
 def render_registers(snap: ContextSnapshot,
                      watch: Optional[list] = None) -> str:
     watch = watch or []
     lines = [_separator("registers")]
 
-    for j in range(29):
-        hex_val  = snap.as_hex(j)
-        decimal  = snap.as_decimal(j)
-        ascii_v  = snap.as_ascii(j)
-        highlight = j in watch
-        w_val = snap.w_as_hex(j) if (snap.x[j] >> 32 == 0 and snap.x[j] != 0) else None
-        # Only show the signed reinterpretation when the top bit is
-        # actually set (i.e. it would otherwise render as a confusing
-        # ~1.8e19 unsigned number) — scoped to x0-x28 only, never the
-        # always-address fp/lr/sp/pc registers below.
-        signed_val = snap.as_signed(j) if snap.x[j] >= (1 << 63) else None
-        lines.append(_format_register_line(f"x{j}", hex_val, decimal, ascii_v, w_val, highlight, signed_val))
+    for group_label, reg_range in _REGISTER_GROUPS:
+        lines.append(f"  {Color.CYAN}── {group_label} ──{Color.RESET}")
+        for j in reg_range:
+            hex_val  = snap.as_hex(j)
+            decimal  = snap.as_decimal(j)
+            ascii_v  = snap.as_ascii(j)
+            highlight = j in watch
+            w_val = snap.w_as_hex(j) if (snap.x[j] >> 32 == 0 and snap.x[j] != 0) else None
+            # Only show the signed reinterpretation when the top bit is
+            # actually set (i.e. it would otherwise render as a confusing
+            # ~1.8e19 unsigned number) — scoped to x0-x28 only, never the
+            # always-address fp/lr/sp/pc registers below.
+            signed_val = snap.as_signed(j) if snap.x[j] >= (1 << 63) else None
+            lines.append(_format_register_line(f"x{j}", hex_val, decimal, ascii_v, w_val, highlight, signed_val))
     lines.append("")
     lines.append(f"  {'fp':<6}  0x{snap.fp:016x}  # {snap.fp}u")
     lines.append(f"  {'lr':<6}  0x{snap.lr:016x}  # {snap.lr}u")

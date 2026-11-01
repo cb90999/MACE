@@ -102,6 +102,7 @@ def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand("command script add -c stop_hook.MACEPatchMem mace_patch_mem")
     debugger.HandleCommand("command script add -c stop_hook.MACEPatchMemHistory mace_patch_mem_history")
     debugger.HandleCommand("command script add -c stop_hook.MACEWatch mace_watch")
+    debugger.HandleCommand("command script add -c stop_hook.MACEBreakpoints mace_breakpoints")
     debugger.HandleCommand("command script add -c stop_hook.MACEGrep mace_grep")
     debugger.HandleCommand("command script add -c stop_hook.MACESearch mace_search")
     debugger.HandleCommand("command script add -c stop_hook.MACEHwBreak mace_hw_break")
@@ -498,6 +499,72 @@ class MACEWatch:
 
     def get_short_help(self):
         return "Set which registers (x0-x28) are highlighted in the context panel"
+
+    def get_long_help(self):
+        return inspect.cleandoc(self.__doc__)
+
+class MACEBreakpoints:
+    """
+    mace_breakpoints — list every breakpoint set in the current target
+    with its resolution status (RESOLVED/PENDING), module, and hit
+    count, instead of requiring `breakpoint list` / re-reading `help`
+    output to notice a breakpoint silently never resolved (e.g. an
+    address-based breakpoint given a file offset instead of an RVA).
+
+    Examples:
+      mace_breakpoints
+    """
+
+    def __init__(self, debugger, internal_dict):
+        pass
+
+    def __call__(self, debugger, command, exe_ctx, result, internal_dict=None):
+        target = exe_ctx.GetTarget()
+        if not target.IsValid():
+            result.AppendMessage("[MACE] No valid target.")
+            return
+
+        num_bp = target.GetNumBreakpoints()
+        if num_bp == 0:
+            result.AppendMessage("[MACE] No breakpoints set.")
+            return
+
+        result.AppendMessage(f"{Color.BOLD}── MACE breakpoints ──{Color.RESET}")
+        for i in range(num_bp):
+            bp = target.GetBreakpointAtIndex(i)
+            if not bp.IsValid():
+                continue
+
+            bp_id = bp.GetID()
+            num_locs = bp.GetNumLocations()
+            enabled_tag = "" if bp.IsEnabled() else f"  {Color.YELLOW}[disabled]{Color.RESET}"
+
+            if num_locs == 0:
+                status = f"{Color.RED}PENDING{Color.RESET}"
+                result.AppendMessage(f"  BP {bp_id:<4} {status}{enabled_tag}")
+                continue
+
+            for loc_idx in range(num_locs):
+                loc = bp.GetLocationAtIndex(loc_idx)
+                if not loc.IsValid():
+                    continue
+                loc_id = loc.GetID()
+                addr = loc.GetAddress()
+                func = addr.GetFunction()
+                sym = addr.GetSymbol()
+                name = func.GetName() if func.IsValid() else (sym.GetName() if sym.IsValid() else "?")
+                module = addr.GetModule()
+                mod_name = module.GetFileSpec().GetFilename() if module.IsValid() else "?"
+                hits = loc.GetHitCount()
+                resolved = loc.IsResolved()
+                status = f"{Color.GREEN}RESOLVED{Color.RESET}" if resolved else f"{Color.RED}PENDING{Color.RESET}"
+                loc_tag = f".{loc_id}" if num_locs > 1 else ""
+                result.AppendMessage(
+                    f"  BP {bp_id}{loc_tag:<4} {name:<24} {mod_name:<20} {status}  hits={hits}{enabled_tag}"
+                )
+
+    def get_short_help(self):
+        return "List every breakpoint with resolution status, location, and hit count"
 
     def get_long_help(self):
         return inspect.cleandoc(self.__doc__)
@@ -1095,6 +1162,7 @@ _MACE_COMMANDS = [
     ("mace_connect_android",  MACEConnectAndroid.get_short_help(None)),
     ("mace_connect_ios",      MACEConnectIos.get_short_help(None)),
     ("mace_watch",            MACEWatch.get_short_help(None)),
+    ("mace_breakpoints",      MACEBreakpoints.get_short_help(None)),
     ("mace_options",          "List every mace_ command with a one-line description"),
 ]
 

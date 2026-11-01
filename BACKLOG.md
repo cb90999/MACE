@@ -263,6 +263,21 @@ Target: Panel must be genuinely useful standalone before AI layer lands.
    happens, as a concrete "why this matters" case beyond the abstract
    description above.
 
+   UPDATE 2026-11-01: implemented. _classify_memory_region()
+   (lldb_session.py) calls SBProcess.GetMemoryRegionInfo() for every
+   address-shaped register (>= 0x100000000, same threshold already
+   used by _annotate_objc_call), preferring a resolved module+section
+   name (e.g. "Enigma.__TEXT") over a generic "heap/stack" fallback
+   when no module resolves. ContextSnapshot.region_labels carries the
+   result; render_registers() shows "[label]" in place of the raw
+   decimal whenever one resolves, leaving the decimal unchanged for
+   small-integer registers. Three commits: 91a7050 (ContextSnapshot
+   field), ac46afe (classifier), 781c491 (panel display). NOT YET
+   device-verified -- folded into the next live spot-check session
+   rather than treated as done on mock confidence alone, since this
+   is new SBProcess API surface (unlike the pure post-processing
+   fixes elsewhere in this file).
+
 3b. _annotate_objc_call fires selector resolution without confirming
     a real objc_msgSend call site
     Discovered: 2026-08-27, DVIA-v2 session

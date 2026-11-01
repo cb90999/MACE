@@ -92,7 +92,20 @@ def _classify_memory_region(process: lldb.SBProcess, target: lldb.SBTarget, addr
     try:
         region_info = lldb.SBMemoryRegionInfo()
         err = process.GetMemoryRegionInfo(addr, region_info)
-        if err.Fail() or not region_info.IsMapped():
+        if err.Fail():
+            # A failed query (vs. a successful one reporting "not
+            # mapped") is more likely a transient gdb-remote protocol
+            # hiccup than a real answer -- confirmed live: the same
+            # literal address flipped from labeled to unlabeled across
+            # consecutive stops with no code change in between
+            # (BACKLOG.md, 2026-11-01 device spot-check). One retry
+            # before giving up; a confident "not mapped" result below
+            # is NOT retried, since that's a real answer, not a failure.
+            region_info = lldb.SBMemoryRegionInfo()
+            err = process.GetMemoryRegionInfo(addr, region_info)
+            if err.Fail():
+                return None
+        if not region_info.IsMapped():
             return None
 
         # Prefer a resolvable binary/dylib image + section name -- more
@@ -377,13 +390,21 @@ def _get_breakpoint_id(thread: lldb.SBThread) -> str:
         return ""
 
 
-def _get_call_chain(thread: lldb.SBThread, depth: int = 3) -> list[str]:
+def _get_call_chain(thread: lldb.SBThread, depth: int = 2) -> list[str]:
     """
     Return up to `depth` compact frame descriptions starting at the
     current frame (#0), e.g. "#0 validate()", "#1 JNI checkInput()".
     Deliberately capped and auto-displayed -- full backtrace stays
     available via lldb's own `bt`/`thread backtrace`, this isn't a
     replacement for it.
+
+    Default depth is 2 (#0/#1 only), not deeper -- confirmed live
+    (BACKLOG.md, 2026-11-01 device spot-check) that frame #2 is
+    unreliable on at least one real optimized Swift binary: two stops
+    inside the same unchanged caller frame (byte-identical fp/lr)
+    showed two different, inconsistent values for #2. #0/#1 were
+    reliable across the same stops. Raise this only once a more robust
+    unwind method is found and re-validated live.
     """
     chain = []
     try:

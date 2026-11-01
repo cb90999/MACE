@@ -7,6 +7,7 @@ Reads live register state from a stopped process and returns a populated snapsho
 """
 
 import lldb
+from typing import Optional
 from mace.core.context_snapshot import ContextSnapshot
 from mace.core.swift_context import SwiftContext
 
@@ -69,6 +70,58 @@ def _compute_aslr_slide(target: lldb.SBTarget, pc: int) -> int:
     return slide if slide >= 0 else 0
 
 
+_ADDR_THRESHOLD = 0x100000000  # heuristic gate: skip region lookups for
+                                 # small integers, matching the existing
+                                 # pointer-vs-small-int convention already
+                                 # used elsewhere in this file
+                                 # (_annotate_objc_call)
+
+
+def _classify_memory_region(process: lldb.SBProcess, target: lldb.SBTarget, addr: int) -> Optional[str]:
+    """
+    Classify addr's memory region for display, e.g. "heap", "stack", or
+    "<module>.<section>" (e.g. "Enigma.__TEXT"). Returns None if addr
+    isn't actually mapped, or resolves to no module and no recognizable
+    heap/stack shape -- display falls back to the raw decimal in that
+    case rather than showing a guessed label.
+
+    Only called on address-shaped register values (see _ADDR_THRESHOLD) --
+    running this on every small integer would just report "unmapped"
+    noise for the overwhelming majority of registers.
+    """
+    try:
+        region_info = lldb.SBMemoryRegionInfo()
+        err = process.GetMemoryRegionInfo(addr, region_info)
+        if err.Fail() or not region_info.IsMapped():
+            return None
+
+        # Prefer a resolvable binary/dylib image + section name -- more
+        # actionable for a researcher than a generic mapped-region name
+        # (matches the backlog's "MACESecurityTest.__DATA" example).
+        sb_addr = target.ResolveLoadAddress(addr)
+        module = sb_addr.GetModule()
+        if module.IsValid():
+            mod_name = module.GetFileSpec().GetBasename()
+            section = sb_addr.GetSection()
+            if section.IsValid():
+                return f"{mod_name}.{section.GetName()}"
+            return mod_name
+
+        region_name = region_info.GetName()  # often empty/None on iOS/Android
+        if region_name:
+            return region_name
+
+        # No module, no named region -- anonymous RW-no-X mappings are
+        # overwhelmingly heap or stack in practice on both iOS and
+        # Android, so this is still a useful label, just a coarser one.
+        if region_info.IsWritable() and not region_info.IsExecutable():
+            return "heap/stack"
+
+        return None
+    except Exception:
+        return None  # Annotation is best-effort, never crash MACE
+
+
 def snapshot_from_frame(frame: lldb.SBFrame,
                         stop_reason: str = "",
                         iteration: int = None) -> ContextSnapshot:
@@ -100,6 +153,12 @@ def snapshot_from_frame(frame: lldb.SBFrame,
     snap.iteration   = iteration
     snap.aslr_slide  = _compute_aslr_slide(target, snap.pc)
     snap.call_chain  = _get_call_chain(frame.GetThread())
+
+    # --- Memory region labels for address-shaped registers ---
+    process = frame.GetThread().GetProcess()
+    for i in range(29):
+        if snap.x[i] >= _ADDR_THRESHOLD:
+            snap.region_labels[i] = _classify_memory_region(process, target, snap.x[i])
 
     # --- Passive objc_msgSend annotation ---
     _annotate_objc_call(snap, frame, target)

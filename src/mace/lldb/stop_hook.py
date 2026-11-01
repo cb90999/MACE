@@ -10,6 +10,7 @@ import time
 import inspect
 import struct
 import subprocess
+import threading
 
 from mace.lldb.lldb_session import snapshot_from_frame, _get_breakpoint_id
 from mace.display.context_panel import render_panel, Color
@@ -19,6 +20,13 @@ COMPARE    = None  # set per-session
 
 _iteration = 0
 _hook_id   = None
+
+# Serializes MACEStopHook.handle_stop's build-and-print section. LLDB
+# can invoke handle_stop once per thread when multiple threads report
+# a stop for the same event; without this, two concurrent invocations'
+# stream.Print() calls have been observed to interleave
+# character-by-character in the output (found 2026-10-28).
+_handle_stop_lock = threading.Lock()
 
 # In-session patch audit trail. Persists for the life of the lldb
 # session (not tied to any single breakpoint or stop-hook iteration),
@@ -57,16 +65,17 @@ class MACEStopHook:
         if thread.GetStopReason() == lldb.eStopReasonSignal:
             return False
 
-        _iteration += 1
         frame = thread.GetFrameAtIndex(0)
 
         if not frame.IsValid():
             return False
 
-        snap  = snapshot_from_frame(frame, iteration=_iteration)
-        _snapshot_history.append(snap)
-        panel = render_panel(snap, watch=WATCH_REGS, compare=COMPARE)
-        stream.Print(panel + "\n")
+        with _handle_stop_lock:
+            _iteration += 1
+            snap  = snapshot_from_frame(frame, iteration=_iteration)
+            _snapshot_history.append(snap)
+            panel = render_panel(snap, watch=WATCH_REGS, compare=COMPARE)
+            stream.Print(panel + "\n")
         return True
 
 

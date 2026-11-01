@@ -81,36 +81,29 @@ def _classify_memory_region(process: lldb.SBProcess, target: lldb.SBTarget, addr
     """
     Classify addr's memory region for display, e.g. "heap", "stack", or
     "<module>.<section>" (e.g. "Enigma.__TEXT"). Returns None if addr
-    isn't actually mapped, or resolves to no module and no recognizable
-    heap/stack shape -- display falls back to the raw decimal in that
-    case rather than showing a guessed label.
+    doesn't resolve to a loaded module AND no recognizable heap/stack
+    shape -- display falls back to the raw decimal in that case rather
+    than showing a guessed label.
 
     Only called on address-shaped register values (see _ADDR_THRESHOLD) --
     running this on every small integer would just report "unmapped"
     noise for the overwhelming majority of registers.
+
+    Module/section resolution is tried FIRST and does not depend on a
+    working memory-region query -- it reads LLDB's own already-loaded
+    image list (SBTarget.ResolveLoadAddress), nothing from the remote
+    stub. Confirmed live (2026-11-01, BACKLOG.md) that at least one real
+    iOS jailbreak debugserver build reports "qMemoryRegionInfo is not
+    supported" outright -- a hard capability gap, not a transient
+    failure a retry fixes. Gating module resolution behind that query
+    (the original ordering) silently discarded a classification that
+    never needed it. The coarse heap/stack fallback below still needs
+    GetMemoryRegionInfo() and will simply stay unavailable (safe
+    fallback to decimal, not a wrong guess) on a debugserver build that
+    doesn't support it.
     """
     try:
-        region_info = lldb.SBMemoryRegionInfo()
-        err = process.GetMemoryRegionInfo(addr, region_info)
-        if err.Fail():
-            # A failed query (vs. a successful one reporting "not
-            # mapped") is more likely a transient gdb-remote protocol
-            # hiccup than a real answer -- confirmed live: the same
-            # literal address flipped from labeled to unlabeled across
-            # consecutive stops with no code change in between
-            # (BACKLOG.md, 2026-11-01 device spot-check). One retry
-            # before giving up; a confident "not mapped" result below
-            # is NOT retried, since that's a real answer, not a failure.
-            region_info = lldb.SBMemoryRegionInfo()
-            err = process.GetMemoryRegionInfo(addr, region_info)
-            if err.Fail():
-                return None
-        if not region_info.IsMapped():
-            return None
-
-        # Prefer a resolvable binary/dylib image + section name -- more
-        # actionable for a researcher than a generic mapped-region name
-        # (matches the backlog's "MACESecurityTest.__DATA" example).
+        # Module/section resolution first -- no remote-stub dependency.
         sb_addr = target.ResolveLoadAddress(addr)
         module = sb_addr.GetModule()
         if module.IsValid():
@@ -120,11 +113,26 @@ def _classify_memory_region(process: lldb.SBProcess, target: lldb.SBTarget, addr
                 return f"{mod_name}.{section.GetName()}"
             return mod_name
 
+        # No module -- fall back to the coarse heap/stack guess, which
+        # DOES require a working memory-region query. One retry on a
+        # genuine query failure (vs. a confident "not mapped" result,
+        # which is never retried); if the query isn't supported at all,
+        # this consistently returns None and the decimal shows instead.
+        region_info = lldb.SBMemoryRegionInfo()
+        err = process.GetMemoryRegionInfo(addr, region_info)
+        if err.Fail():
+            region_info = lldb.SBMemoryRegionInfo()
+            err = process.GetMemoryRegionInfo(addr, region_info)
+            if err.Fail():
+                return None
+        if not region_info.IsMapped():
+            return None
+
         region_name = region_info.GetName()  # often empty/None on iOS/Android
         if region_name:
             return region_name
 
-        # No module, no named region -- anonymous RW-no-X mappings are
+        # No named region either -- anonymous RW-no-X mappings are
         # overwhelmingly heap or stack in practice on both iOS and
         # Android, so this is still a useful label, just a coarser one.
         if region_info.IsWritable() and not region_info.IsExecutable():

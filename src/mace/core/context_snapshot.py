@@ -63,6 +63,14 @@ class ContextSnapshot:
     syscall_number: Optional[int] = None  # signed x16 value at the trap (BSD > 0, Mach trap < 0)
     syscall_kind: str = ""         # "BSD" or "Mach trap" — which XNU convention applies
 
+    # --- Call chain (compact, auto-displayed) ---
+    call_chain: list[str] = field(default_factory=list)
+                                    # e.g. ["#0 validate()", "#1 JNI checkInput()",
+                                    # "#2 art_quick_generic_jni_trampoline"] -- capped
+                                    # at a small depth by default (see
+                                    # _get_call_chain in lldb_session.py); full
+                                    # backtrace stays available via lldb's own bt
+
     # --- Derived helpers ---
 
     def w(self, n: int) -> int:

@@ -151,6 +151,10 @@ def render_panel(snap: ContextSnapshot,
         render_stop_banner(snap),
         render_registers(snap, watch=watch),
     ]
+    if snap.call_chain:
+        parts.append(_separator("call chain"))
+        for entry in snap.call_chain:
+            parts.append(f"  {Color.CYAN}{entry}{Color.RESET}")
     if compare:
         parts.append(_separator("comparison"))
         parts.append(render_match_status(snap, *compare))

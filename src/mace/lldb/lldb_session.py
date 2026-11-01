@@ -99,6 +99,7 @@ def snapshot_from_frame(frame: lldb.SBFrame,
     snap.breakpoint_id = _get_breakpoint_id(frame.GetThread())
     snap.iteration   = iteration
     snap.aslr_slide  = _compute_aslr_slide(target, snap.pc)
+    snap.call_chain  = _get_call_chain(frame.GetThread())
 
     # --- Passive objc_msgSend annotation ---
     _annotate_objc_call(snap, frame, target)
@@ -315,6 +316,28 @@ def _get_breakpoint_id(thread: lldb.SBThread) -> str:
         return f"{bp_id}.{loc_id}"
     except Exception:
         return ""
+
+
+def _get_call_chain(thread: lldb.SBThread, depth: int = 3) -> list[str]:
+    """
+    Return up to `depth` compact frame descriptions starting at the
+    current frame (#0), e.g. "#0 validate()", "#1 JNI checkInput()".
+    Deliberately capped and auto-displayed -- full backtrace stays
+    available via lldb's own `bt`/`thread backtrace`, this isn't a
+    replacement for it.
+    """
+    chain = []
+    try:
+        num_frames = min(depth, thread.GetNumFrames())
+        for i in range(num_frames):
+            frame = thread.GetFrameAtIndex(i)
+            if not frame.IsValid():
+                break
+            name = frame.GetFunctionName() or f"0x{frame.GetPC():x}"
+            chain.append(f"#{i} {name}")
+    except Exception:
+        pass
+    return chain
 
 
 def _get_app_text_ranges(target) -> list:

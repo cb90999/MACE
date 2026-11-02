@@ -1063,6 +1063,23 @@ than a human having to manually realize "I should go read source now"
 after getting stuck. A concrete, vivid illustration for this item,
 worth more than an abstract architecture pitch alone.
 
+UPDATE 2026-11-02: CONFIRMED out of December-deadline scope (CB's direction,
+end-of-session planning for the 2026-11-02 v3 design session). This item
+stays here as a real, well-motivated post-GA direction (the yuvalino case
+study above is still the strongest argument for it eventually existing), but
+it is explicitly NOT part of the NowSecure demo or the December deadline.
+Rationale: the 2026-10-08 "Static RE Out of Scope" decision below already
+covers this ground -- the demo assumes static analysis happened offline (via
+manual work or some other tool's own MCP, e.g. Ghidra/JEB/REA) and consumes
+its output as input, rather than MACE integrating with any specific static
+tool itself. 2026-11-02's findings-JSON ingestion feature (BACKLOG.md,
+`mace_load_findings`) is the concrete implementation of that decision and
+the demo's actual proof point: a tool-agnostic JSON any static-RE workflow
+could produce, which MACE reads and acts on, live-validated end-to-end on
+both iOS and Android the same day. That's sufficient to make the "static +
+dynamic, one agentic workflow" case without needing a literal JEB API
+integration.
+
 
 ## NowSecure Demo Scope: Static RE Out of Scope (decision, 2026-10-08)
 Static RE already has well-served agentic MCP tooling -- JEB/Hopper

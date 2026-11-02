@@ -1,0 +1,28 @@
+{
+  "target": "n4tive_ch04",
+  "platform": "android",
+  "binary": "libch04_gauntlet.so",
+  "findings": [
+    {
+      "symbol": "verify_flag",
+      "offset": 324,
+      "kind": "comparison_site",
+      "note": "cset w8, eq (HMAC-SHA256 constant-time compare result) stored here -- the actual pass/fail gate; verify_flag is a one-way HMAC, no legitimate solve path exists",
+      "suggested_action": "patch w8 to 1 to force pass (input must satisfy 6<=len<=129 length check first)"
+    },
+    {
+      "symbol": "check_tracer_pid",
+      "offset": 388,
+      "kind": "anti_debug_check",
+      "note": "final computed key byte (from /proc/self/status TracerPid) loaded into w0 here, right before epilogue -- always nonzero under an active debugger attach",
+      "suggested_action": "patch w0 to this check's real expected_bytes[i] (read live via 'target variable expected_bytes'); each check contributes one key byte, not a simple pass/fail boolean"
+    },
+    {
+      "symbol": "check_ptrace",
+      "offset": 112,
+      "kind": "anti_debug_check",
+      "note": "final computed key byte loaded into w0 here -- self-attach ptrace(PTRACE_TRACEME) fails under an existing debugger, driving this down the 'detected' branch",
+      "suggested_action": "patch w0 to this check's real expected_bytes[i] (read live via 'target variable expected_bytes'); each check contributes one key byte, not a simple pass/fail boolean"
+    }
+  ]
+}

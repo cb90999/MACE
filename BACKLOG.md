@@ -2890,6 +2890,29 @@ RedRunner) -- today's validation was iOS-only. Next natural step once Android
 hardware is in the loop.
 
 
+UPDATE 2026-11-02 (same day, before Android switch): found a real schema gap while
+researching N4TIVE ch03/ch04 for the next findings JSONs, before touching the Android
+device. ch04's actual patch site (the verify_flag HMAC-bypass result store, `cset w8,
+eq`) sits at offset <+324> inside the function, not at its entry -- symbol-only
+resolution (BreakpointCreateByName) can only land at entry, and the only address
+logged for that site in this file is a captured runtime/load address from one past
+session, not a reusable RVA. ch03's gate functions (Java_..._gate1 etc.) don't have
+this problem -- they're JNI entry points themselves, so symbol-at-entry is already the
+right granularity there.
+
+Fixed by extending the schema/loader rather than working around it: Finding gained an
+optional `offset` field (byte count, requires `symbol`); MACELoadFindings resolves
+symbol+offset by looking up the symbol's start file-address via the module's own
+symbol table (`SBModule.FindSymbol` -> `GetStartAddress` -> `GetFileAddress`), adding
+the offset, and resolving through `SBModule.ResolveFileAddress` -- same ASLR-safe
+approach as the existing address/RVA path. A failed symbol+offset resolution reports
+as failed rather than silently falling back to the symbol's entry point (the wrong
+instruction). Two commits: 8860a73 (core/findings.py), effdb22 (stop_hook.py
+resolution logic + updated mace_load_findings result message, now reporting "N by
+symbol, N by symbol+offset, N by address"). Not yet live-verified on device --
+Android hardware switch is next.
+
+
 ## Device spot-check of 2026-11-01 UI batch: two real findings (2026-11-01)
 Source: live eeacollatz/Enigma session on Chida's iPad, verifying the 8 UI-cleanup
 commits plus memory-region labeling from today's session

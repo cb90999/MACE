@@ -2868,6 +2868,27 @@ offset needs explicit disambiguation per the Il2CppDumper lesson in HANDOFF.md's
 superseded-guidance list; may also want a `confidence`/`source_tool` field for when a real
 static tool's output is noisier than a hand-authored one).
 
+UPDATE 2026-11-02: implemented and live-validated, both schema questions resolved.
+Symbol-first/address-fallback (RVA via SBModule.ResolveFileAddress, not a captured
+runtime address); confidence/source_tool deliberately deferred, not added to the MVP
+schema. Five commits: 561e023 (core/findings.py loader + registry), cf18229
+(ContextSnapshot fields), 1985d9d (_annotate_finding), 8103a40 (panel display),
+16e795a (mace_load_findings command). First real findings JSON: findings/eeacollatz.json
+(759edb7), using the validated check_flag comparison site.
+
+Live-verified on real eeacollatz/Enigma hardware, both resolution paths deliberately
+exercised: symbol-first resolved cleanly (`1 by symbol, 0 by address`), then re-tested
+with `symbol` stripped from the JSON to force the address path (`0 by symbol, 1 by
+address`) -- landed at the exact same instruction (`check_flag` at
+collatz_eea_v2.S:319, pc=0x0104554164) with identical correct finding annotation
+both times. RVA/ASLR handling confirmed solid. Panel's `── finding ──` section
+renders kind/note/suggested_action correctly, positioned ahead of call chain as
+designed.
+
+Not yet done: findings JSONs for the other two demo apps (N4TIVE ch03/ch04,
+RedRunner) -- today's validation was iOS-only. Next natural step once Android
+hardware is in the loop.
+
 
 ## Device spot-check of 2026-11-01 UI batch: two real findings (2026-11-01)
 Source: live eeacollatz/Enigma session on Chida's iPad, verifying the 8 UI-cleanup

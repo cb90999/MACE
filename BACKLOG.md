@@ -3038,3 +3038,33 @@ Also worth confirming before assuming this is a universal problem: today's findi
 iOS/`debugserver`-specific. Android's `lldb-server` typically backs `qMemoryRegionInfo` with
 `/proc/pid/maps`, so it may already work fine there and this may turn out to be a
 one-platform gap, not something needing a cross-platform fallback at all.
+
+
+UPDATE 2026-11-02 (Android hardware, live, N4TIVE ch04): that speculation was only
+half right. qMemoryRegionInfo DID work on this session's Pixel 10a lldb-server --
+three real breakpoint hits all showed correctly-labeled non-module addresses
+(`[[stack]]`, `[[anon:scudo:primary]]`, `[[anon:dalvik-LinearAlloc]]`, meaning a
+successful region query, not module/section resolution). Then, starting with the
+stop immediately after a benign SIGCHLD/fork-stop (continuing past a `linker64`
+`__dl_syscall` auto-stop, same documented pattern as the 2026-10-20 ch04 session),
+every subsequent `memory region <addr>` query failed with "qMemoryRegionInfo is not
+supported" -- including, confirmed directly, re-querying an address
+(0xb400006f63979010) that had been successfully labeled moments earlier in the same
+session. Consistent failure across 3 repeated direct queries against 2 different
+addresses after that point, not a retry-fixable flake.
+
+CB's observation worth recording: yesterday's iOS finding showed a similar
+works-then-fails shape within one connection, but no SIGCHLD/fork-stop was ever
+logged alongside it there -- plausibly because iOS apps essentially never fork
+(sandboxed), while Android's zygote-era fork-stop is a documented, Android-specific
+phenomenon. So this may NOT be the same root cause as iOS's hard, from-the-start
+capability gap -- possibly two different mechanisms that produce a similar
+symptom (iOS: the remote stub/debugserver build genuinely never supports the
+packet; Android: something about the fork event disrupts lldb-server's ability to
+keep answering it, even on a build that supported it going in). Not confirmed --
+correlation observed once, not yet tested for causation (e.g. deliberately
+triggering a fork-stop mid-session on a fresh connection and checking before/after
+without the confound of also having just run `mace_patch`/`continue`). Parked here
+alongside the existing alternative-approach candidates (SP-proximity, malloc_size())
+since both remain valid regardless of which specific mechanism turns out to be
+responsible on which platform.

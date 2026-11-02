@@ -8,30 +8,11 @@ set, so the stop-hook/display layer can annotate a hit with that
 finding's kind/note/suggested_action instead of the analyst needing to
 already know what they're looking at.
 
-Schema (MVP, see BACKLOG.md's 2026-10-31/2026-11-02 entries for design
-history):
-{
-  "target": "eeacollatz",
-  "platform": "ios",
-  "binary": "Enigma",
-  "findings": [
-    {
-      "symbol": "check_flag",
-      "address": "0x104f8c180",
-      "kind": "comparison_site",
-      "note": "cmp x20, x0 -- real pass/fail gate #1",
-      "suggested_action": "watch x20,x0; patch x20 if mismatch"
-    }
-  ]
-}
-
-`symbol` and `address` are both optional per finding, but at least one
-must be present. `symbol` is preferred when present (matches existing
-`breakpoint set --name` recipes, auto-handles ASLR). `address` is
-treated as a file-relative address (RVA) resolved against the target's
-main module via SBModule.ResolveFileAddress() -- NOT a raw runtime/
-load address captured from some prior run, which would be wrong the
-moment ASLR picks a different slide.
+Schema: see BACKLOG.md's 2026-10-31/2026-11-02 entries for design
+history. `symbol` and/or `address` identify the breakpoint location
+(symbol preferred); `offset` is an optional byte count naming a point
+inside that symbol's body rather than its entry, for when the real
+compare/patch site isn't at function start. `offset` requires `symbol`.
 """
 
 import json
@@ -43,6 +24,7 @@ from typing import Optional
 class Finding:
     symbol: str = ""
     address: str = ""          # hex string, e.g. "0x104f8c180" -- file-relative
+    offset: int = 0            # byte offset from `symbol`'s start address; 0 = at entry
     kind: str = ""
     note: str = ""
     suggested_action: str = ""
@@ -91,14 +73,25 @@ def load_findings(path: str) -> FindingsSet:
             raise FindingsLoadError(f"{path}: findings[{i}] must be an object")
         symbol = entry.get("symbol", "")
         address = entry.get("address", "")
+        offset = entry.get("offset", 0)
         if not symbol and not address:
             raise FindingsLoadError(
                 f"{path}: findings[{i}] has neither 'symbol' nor 'address' -- "
                 f"at least one is required to set a breakpoint"
             )
+        if not isinstance(offset, int) or isinstance(offset, bool):
+            raise FindingsLoadError(
+                f"{path}: findings[{i}]['offset'] must be an integer, got {offset!r}"
+            )
+        if offset and not symbol:
+            raise FindingsLoadError(
+                f"{path}: findings[{i}] has 'offset' but no 'symbol' -- "
+                f"offset is only meaningful relative to a symbol's start address"
+            )
         findings_list.append(Finding(
             symbol=symbol,
             address=address,
+            offset=offset,
             kind=entry.get("kind", ""),
             note=entry.get("note", ""),
             suggested_action=entry.get("suggested_action", ""),

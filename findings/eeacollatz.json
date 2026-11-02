@@ -1,0 +1,14 @@
+{
+  "target": "eeacollatz",
+  "platform": "ios",
+  "binary": "Enigma",
+  "findings": [
+    {
+      "symbol": "check_flag",
+      "address": "0x100004164",
+      "kind": "comparison_site",
+      "note": "cmp x20, x0 -- real pass/fail gate (x20 == magic1)",
+      "suggested_action": "watch x20,x0; patch x20 if mismatch"
+    }
+  ]
+}

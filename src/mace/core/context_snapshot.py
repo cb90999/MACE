@@ -84,6 +84,19 @@ class ContextSnapshot:
                                     # back to the raw decimal rather than
                                     # showing a guessed label.
 
+    # --- Findings-JSON annotation ---
+    finding_kind: str = ""              # e.g. "comparison_site"
+    finding_note: str = ""              # e.g. "cmp x20, x0 -- real pass/fail gate #1"
+    finding_suggested_action: str = ""  # e.g. "watch x20,x0; patch x20 if mismatch"
+                                         # populated by _annotate_finding()
+                                         # (lldb_session.py) when the current
+                                         # stop's breakpoint matches one set by
+                                         # mace_load_findings -- see
+                                         # core/findings.py. All three stay ""
+                                         # when no findings-JSON is loaded or
+                                         # this stop isn't one of its
+                                         # breakpoints.
+
     # --- Derived helpers ---
 
     def w(self, n: int) -> int:

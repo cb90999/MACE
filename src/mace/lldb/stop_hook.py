@@ -610,6 +610,23 @@ class MACELoadFindings:
             result.AppendMessage(f"[MACE] {e}")
             return
 
+        # Resolve the finding's own module by name (findings_set.binary) rather
+        # than assuming GetModuleAtIndex(0) -- that's the main executable, which
+        # is only ever the real target on iOS (one self-contained binary). On
+        # Android the actual library is always a separately dlopen'd .so, never
+        # module 0 (e.g. libch04_gauntlet.so sits at index 355 on this target,
+        # app_process64 is index 0) -- see BACKLOG.md's 2026-11-02 entry.
+        module = target.FindModule(lldb.SBFileSpec(findings_set.binary))
+        if not module.IsValid():
+            result.AppendMessage(
+                f"[MACE] Warning: module '{findings_set.binary}' not found in "
+                f"target -- address/offset resolution will fail for any finding "
+                f"that needs it (plain symbol-only findings still resolve "
+                f"target-wide via BreakpointCreateByName). Check 'image list' "
+                f"for the exact loaded name, and that the library has actually "
+                f"been dlopen'd yet."
+            )
+
         resolved_by_symbol = 0
         resolved_by_offset = 0
         resolved_by_address = 0
@@ -619,7 +636,6 @@ class MACELoadFindings:
             bp = None
 
             if f.symbol and f.offset:
-                module = target.GetModuleAtIndex(0)
                 if module.IsValid():
                     symbol_obj = module.FindSymbol(f.symbol, lldb.eSymbolTypeCode)
                     if symbol_obj.IsValid():
@@ -650,7 +666,6 @@ class MACELoadFindings:
                 except ValueError:
                     failed.append(f.symbol or f.address)
                     continue
-                module = target.GetModuleAtIndex(0)
                 if module.IsValid():
                     sb_addr = module.ResolveFileAddress(file_addr)
                     if sb_addr.IsValid():

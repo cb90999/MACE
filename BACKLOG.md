@@ -3068,3 +3068,19 @@ without the confound of also having just run `mace_patch`/`continue`). Parked he
 alongside the existing alternative-approach candidates (SP-proximity, malloc_size())
 since both remain valid regardless of which specific mechanism turns out to be
 responsible on which platform.
+
+
+## mace_load_findings warning: point at mace_grep directly (2026-11-02)
+Source: CB asking, end of session, whether today surfaced any mace_grep/image
+list gaps
+
+Small polish, not urgent. When a findings-JSON's `binary` module isn't found,
+the warning currently says "Check 'image list' for the exact loaded name" --
+generic advice that doesn't point at the actual fastest path. Tonight's N4TIVE
+ch04 session needed exactly this lookup (confirming libch04_gauntlet.so wasn't
+loaded until the challenge screen's button was tapped) and used `mace_grep
+<substring> image list` to do it quickly. The warning message in
+MACELoadFindings.__call__ (stop_hook.py) should say that directly, e.g.
+"Check via 'mace_grep <name> image list'" instead of just "Check 'image
+list'" -- shortcuts the exact confusion hit tonight for the next person (or
+session) who sees this warning.

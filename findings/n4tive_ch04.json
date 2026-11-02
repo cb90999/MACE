@@ -14,7 +14,7 @@
       "symbol": "check_tracer_pid",
       "offset": 388,
       "kind": "anti_debug_check",
-      "note": "final computed key byte (from /proc/self/status TracerPid) loaded into w0 here, right before epilogue -- always nonzero under an active debugger attach",
+      "note": "final computed key byte (from /proc/self/status TracerPid) loaded into w0 here, right before epilogue -- always 0x00 under an active debugger attach (source: 'return traced ? 0x00 : expected_bytes[0];')",
       "suggested_action": "patch w0 to this check's real expected_bytes[i] (read live via 'target variable expected_bytes'); each check contributes one key byte, not a simple pass/fail boolean"
     },
     {

@@ -159,6 +159,12 @@ def render_panel(snap: ContextSnapshot,
         render_stop_banner(snap),
         render_registers(snap, watch=watch),
     ]
+    if snap.finding_kind or snap.finding_note:
+        parts.append(_separator("finding"))
+        kind_tag = f"[{snap.finding_kind}]  " if snap.finding_kind else ""
+        parts.append(f"  {Color.CYAN}{kind_tag}{snap.finding_note}{Color.RESET}")
+        if snap.finding_suggested_action:
+            parts.append(f"  {Color.YELLOW}suggested: {snap.finding_suggested_action}{Color.RESET}")
     if snap.call_chain:
         parts.append(_separator("call chain"))
         for entry in snap.call_chain:

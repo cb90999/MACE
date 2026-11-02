@@ -10,6 +10,7 @@ import lldb
 from typing import Optional
 from mace.core.context_snapshot import ContextSnapshot
 from mace.core.swift_context import SwiftContext
+from mace.core import findings
 
 # Module-level Swift context cache — loaded once per binary
 _swift_context_cache: dict[str, SwiftContext] = {}
@@ -172,6 +173,7 @@ def snapshot_from_frame(frame: lldb.SBFrame,
     snap.stop_reason = stop_reason or _get_stop_reason(frame.GetThread())
     snap.breakpoint_id = _get_breakpoint_id(frame.GetThread())
     snap.iteration   = iteration
+    _annotate_finding(snap)
     snap.aslr_slide  = _compute_aslr_slide(target, snap.pc)
     snap.call_chain  = _get_call_chain(frame.GetThread())
 
@@ -426,6 +428,28 @@ def _get_call_chain(thread: lldb.SBThread, depth: int = 2) -> list[str]:
     except Exception:
         pass
     return chain
+
+
+def _annotate_finding(snap: ContextSnapshot) -> None:
+    """
+    Annotate the panel with a loaded finding's kind/note/suggested_action
+    when the current stop's breakpoint ID matches one set by
+    mace_load_findings (see core/findings.py). Independent of the
+    objc/Swift/JNI/syscall annotators below -- purely a registry lookup,
+    no new LLDB API surface.
+    """
+    if not snap.breakpoint_id:
+        return
+    try:
+        bp_id = int(snap.breakpoint_id.split(".")[0])
+    except (ValueError, IndexError):
+        return
+    finding = findings.get_finding_for_breakpoint(bp_id)
+    if finding is None:
+        return
+    snap.finding_kind = finding.kind
+    snap.finding_note = finding.note
+    snap.finding_suggested_action = finding.suggested_action
 
 
 def _get_app_text_ranges(target) -> list:

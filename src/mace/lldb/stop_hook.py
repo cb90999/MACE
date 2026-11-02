@@ -575,12 +575,13 @@ class MACELoadFindings:
     """
     mace_load_findings <path>.json — load a findings-JSON file (a
     tool-agnostic static-RE handoff format) and set a breakpoint at
-    each finding's symbol (preferred) or address (file-relative RVA
-    fallback, resolved via SBModule.ResolveFileAddress so ASLR is
-    handled correctly). When a loaded finding's breakpoint is hit, the
-    context panel annotates the stop with that finding's kind/note/
-    suggested_action instead of the analyst needing to already know
-    what they're looking at.
+    each finding's symbol (preferred), symbol+offset (a byte offset
+    into the symbol's body, for a finding that isn't at the function's
+    entry point), or address (file-relative RVA fallback, resolved via
+    SBModule.ResolveFileAddress so ASLR is handled correctly). When a
+    loaded finding's breakpoint is hit, the context panel annotates
+    the stop with that finding's kind/note/suggested_action instead of
+    the analyst needing to already know what they're looking at.
 
     Schema and design history: BACKLOG.md's 2026-10-31 and 2026-11-02
     entries.
@@ -610,12 +611,33 @@ class MACELoadFindings:
             return
 
         resolved_by_symbol = 0
+        resolved_by_offset = 0
         resolved_by_address = 0
         failed = []
 
         for f in findings_set.findings:
             bp = None
-            if f.symbol:
+
+            if f.symbol and f.offset:
+                module = target.GetModuleAtIndex(0)
+                if module.IsValid():
+                    symbol_obj = module.FindSymbol(f.symbol, lldb.eSymbolTypeCode)
+                    if symbol_obj.IsValid():
+                        start_addr = symbol_obj.GetStartAddress()
+                        if start_addr.IsValid():
+                            file_addr = start_addr.GetFileAddress()
+                            sb_addr = module.ResolveFileAddress(file_addr + f.offset)
+                            if sb_addr.IsValid():
+                                bp = target.BreakpointCreateBySBAddress(sb_addr)
+                                if bp.IsValid() and bp.GetNumLocations() > 0:
+                                    resolved_by_offset += 1
+                                else:
+                                    bp = None
+                if bp is None:
+                    failed.append(f"{f.symbol}+{f.offset}")
+                    continue
+
+            elif f.symbol:
                 bp = target.BreakpointCreateByName(f.symbol)
                 if bp.IsValid() and bp.GetNumLocations() > 0:
                     resolved_by_symbol += 1
@@ -647,7 +669,8 @@ class MACELoadFindings:
         result.AppendMessage(
             f"[MACE] Loaded {len(findings_set.findings)} finding(s) from {args} "
             f"({findings_set.target}/{findings_set.platform}/{findings_set.binary}): "
-            f"{resolved_by_symbol} by symbol, {resolved_by_address} by address."
+            f"{resolved_by_symbol} by symbol, {resolved_by_offset} by symbol+offset, "
+            f"{resolved_by_address} by address."
         )
         if failed:
             result.AppendMessage(f"[MACE] Failed to resolve: {', '.join(failed)}")

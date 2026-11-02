@@ -30,8 +30,10 @@ resolution and a cross-platform module-lookup fix (both found
 necessary via live device work, not speculative design), and
 live-validated end-to-end on BOTH platforms: iOS (eeacollatz) and
 Android (N4TIVE ch04, full real bypass confirmed via the app's own
-UI reaching Status: SOLVED). Rest of v3 (AI+MCP architecture, JEB
-MCP portion) still fully ahead.
+UI reaching Status: SOLVED). Rest of v3 (AI+MCP architecture) still
+fully ahead; JEB MCP integration confirmed out of December-deadline
+scope (2026-11-02, see Active milestone below) -- always a stretch
+goal, now explicitly closed out rather than left ambiguous.
 
 Paste or attach this file at the start of a new chat — with this
 assistant, a different LLM, or any capable assistant — to resume MACE
@@ -178,7 +180,17 @@ and to any LLM assistant working the project, not just one specific one.
     same session. Full detail: BACKLOG.md's 2026-10-31 through
     2026-11-02 entries under "Findings-JSON ingestion."
   - Not yet done: N4TIVE ch03 and RedRunner findings JSONs. Rest of
-    v3 (AI+MCP architecture, JEB MCP portion) untouched.
+    v3 (AI+MCP architecture) untouched.
+  - JEB MCP integration CONFIRMED OUT OF December-deadline scope
+    (2026-11-02). Already tagged "stretch goal, Nov or post-GA" in
+    ROADMAP.md, and already covered by the existing 2026-10-08
+    decision ("Static RE Out of Scope" -- RE assumed done offline,
+    via manual work or some other tool's MCP such as Ghidra/JEB/REA,
+    with its output consumed as input). Today's findings-JSON
+    ingestion work (above) is the concrete implementation of that
+    decision and the demo's actual proof point that static analysis
+    happened -- no JEB integration needed to make that case. See
+    ROADMAP.md's matching 2026-11-02 note for full detail.
 
 ## Immediate next work
 1. N4TIVE ch03 and RedRunner findings JSONs — same pattern as ch04
@@ -190,8 +202,9 @@ and to any LLM assistant working the project, not just one specific one.
    "breakpoint+annotation" findings-JSON model as naturally as
    ch04/eeacollatz did — may need scoping down to whichever gates do
    fit, rather than forcing all 4.
-2. Rest of v3: AI+MCP architecture design, JEB MCP portion. Not yet
-   started.
+2. Rest of v3: AI+MCP architecture design. Not yet started. (JEB MCP
+   integration is NOT part of this -- confirmed out of December-
+   deadline scope 2026-11-02, see Active milestone above.)
 
 Deferred, no session currently allocated:
 - N4TIVE's remaining challenges not already covered (XOR decryption,

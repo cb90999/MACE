@@ -14,6 +14,7 @@ import threading
 
 from mace.lldb.lldb_session import snapshot_from_frame, _get_breakpoint_id
 from mace.display.context_panel import render_panel, Color
+from mace.core import findings
 
 WATCH_REGS = [0, 1]
 COMPARE    = None  # set per-session
@@ -103,6 +104,7 @@ def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand("command script add -c stop_hook.MACEPatchMemHistory mace_patch_mem_history")
     debugger.HandleCommand("command script add -c stop_hook.MACEWatch mace_watch")
     debugger.HandleCommand("command script add -c stop_hook.MACEBreakpoints mace_breakpoints")
+    debugger.HandleCommand("command script add -c stop_hook.MACELoadFindings mace_load_findings")
     debugger.HandleCommand("command script add -c stop_hook.MACEGrep mace_grep")
     debugger.HandleCommand("command script add -c stop_hook.MACESearch mace_search")
     debugger.HandleCommand("command script add -c stop_hook.MACEHwBreak mace_hw_break")
@@ -565,6 +567,93 @@ class MACEBreakpoints:
 
     def get_short_help(self):
         return "List every breakpoint with resolution status, location, and hit count"
+
+    def get_long_help(self):
+        return inspect.cleandoc(self.__doc__)
+
+class MACELoadFindings:
+    """
+    mace_load_findings <path>.json — load a findings-JSON file (a
+    tool-agnostic static-RE handoff format) and set a breakpoint at
+    each finding's symbol (preferred) or address (file-relative RVA
+    fallback, resolved via SBModule.ResolveFileAddress so ASLR is
+    handled correctly). When a loaded finding's breakpoint is hit, the
+    context panel annotates the stop with that finding's kind/note/
+    suggested_action instead of the analyst needing to already know
+    what they're looking at.
+
+    Schema and design history: BACKLOG.md's 2026-10-31 and 2026-11-02
+    entries.
+
+    Examples:
+      mace_load_findings findings/eeacollatz.json
+    """
+
+    def __init__(self, debugger, internal_dict):
+        pass
+
+    def __call__(self, debugger, command, exe_ctx, result, internal_dict=None):
+        args = command.strip()
+        if not args:
+            result.AppendMessage("[MACE] Usage: mace_load_findings <path>.json")
+            return
+
+        target = exe_ctx.GetTarget()
+        if not target.IsValid():
+            result.AppendMessage("[MACE] No valid target.")
+            return
+
+        try:
+            findings_set = findings.load_findings(args)
+        except findings.FindingsLoadError as e:
+            result.AppendMessage(f"[MACE] {e}")
+            return
+
+        resolved_by_symbol = 0
+        resolved_by_address = 0
+        failed = []
+
+        for f in findings_set.findings:
+            bp = None
+            if f.symbol:
+                bp = target.BreakpointCreateByName(f.symbol)
+                if bp.IsValid() and bp.GetNumLocations() > 0:
+                    resolved_by_symbol += 1
+                else:
+                    bp = None
+
+            if bp is None and f.address:
+                try:
+                    file_addr = int(f.address, 16)
+                except ValueError:
+                    failed.append(f.symbol or f.address)
+                    continue
+                module = target.GetModuleAtIndex(0)
+                if module.IsValid():
+                    sb_addr = module.ResolveFileAddress(file_addr)
+                    if sb_addr.IsValid():
+                        bp = target.BreakpointCreateBySBAddress(sb_addr)
+                        if bp.IsValid() and bp.GetNumLocations() > 0:
+                            resolved_by_address += 1
+                        else:
+                            bp = None
+
+            if bp is None:
+                failed.append(f.symbol or f.address or "<unnamed>")
+                continue
+
+            findings.register_finding(bp.GetID(), f)
+
+        result.AppendMessage(
+            f"[MACE] Loaded {len(findings_set.findings)} finding(s) from {args} "
+            f"({findings_set.target}/{findings_set.platform}/{findings_set.binary}): "
+            f"{resolved_by_symbol} by symbol, {resolved_by_address} by address."
+        )
+        if failed:
+            result.AppendMessage(f"[MACE] Failed to resolve: {', '.join(failed)}")
+
+    def get_short_help(self):
+        return "Load a findings-JSON file and set breakpoints with panel annotation"
 
     def get_long_help(self):
         return inspect.cleandoc(self.__doc__)
@@ -1163,6 +1252,7 @@ _MACE_COMMANDS = [
     ("mace_connect_ios",      MACEConnectIos.get_short_help(None)),
     ("mace_watch",            MACEWatch.get_short_help(None)),
     ("mace_breakpoints",      MACEBreakpoints.get_short_help(None)),
+    ("mace_load_findings",    MACELoadFindings.get_short_help(None)),
     ("mace_options",          "List every mace_ command with a one-line description"),
 ]
 

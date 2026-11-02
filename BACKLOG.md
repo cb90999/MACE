@@ -2913,6 +2913,39 @@ symbol, N by symbol+offset, N by address"). Not yet live-verified on device --
 Android hardware switch is next.
 
 
+UPDATE 2026-11-02 (Android hardware, live): connected to the Pixel 10a
+(com.ctf.nativectf, ch04's "RUN ANTI-DEBUG CHECK"), which immediately surfaced a
+second real bug: both the address/RVA and the new symbol+offset resolution paths
+assumed GetModuleAtIndex(0) was the finding's binary -- true on iOS (one
+self-contained app binary, happened to be module 0) but false on Android, where
+the real target is always a separately dlopen'd .so. Confirmed live:
+libch04_gauntlet.so sits at module index 355/352 across two attaches,
+app_process64 at 0. Fixed (480d384) by resolving the module by name via
+target.FindModule() against the findings-JSON's own `binary` field instead,
+with a clear warning if that module isn't found/not yet dlopen'd.
+
+Built findings/n4tive_ch04.json (2acdabd) with three symbol+offset findings, each
+disassembled fresh against the live build (not reused from any prior session's
+captured addresses, per the design-gap note above): verify_flag+324 (the real
+HMAC-compare gate), check_tracer_pid+388 and check_ptrace+112 (the two anti-debug
+checks that actually need forcing, per the 2026-10-20 entry's finding that the
+other 5 of 7 checks compute clean under MACE). All three computed offsets matched
+the live `breakpoint list` output exactly (0x6f4aef7d34, 0x6f4aef664c,
+0x6f4aef6874) before a single breakpoint was even hit.
+
+All three live-triggered and correctly annotated via RUN ANTI-DEBUG CHECK and a
+real flag submission. One accuracy bug caught live and fixed (ab88a28):
+check_tracer_pid's note said "always nonzero under an active debugger attach" --
+backwards. The hit's own source line (`return traced ? 0x00 : expected_bytes[0];`)
+and register dump (x0==0 at the hit) showed it's always 0x00 under a debugger, not
+nonzero; suggested_action was already correct, only the note's polarity was wrong.
+Full bypass confirmed end-to-end: `mace_patch w8 1` at the verify_flag hit, `c`,
+and the app's own UI flipped to Status: SOLVED -- not just "breakpoint resolved,"
+the suggested action actually produces the real bypass.
+
+Not yet done: ch03 (type confusion) and RedRunner findings JSONs.
+
+
 ## Device spot-check of 2026-11-01 UI batch: two real findings (2026-11-01)
 Source: live eeacollatz/Enigma session on Chida's iPad, verifying the 8 UI-cleanup
 commits plus memory-region labeling from today's session

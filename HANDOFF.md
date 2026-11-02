@@ -1,6 +1,6 @@
 # MACE — Session Handoff
 
-Last updated: 2026-11-01
+Last updated: 2026-11-02
 Repo branch: main
 Validated through: v2.5 (eeacollatz) CLOSED — iOS opaque-predicate bug
 found, root-caused, and fixed (the `charset_ok` block was undocumented
@@ -19,12 +19,19 @@ twice demonstrates less than two distinct bug classes per platform.
 v3 demo lineup finalized: iOS = eeacollatz, Android = N4TIVE
 ch03/ch04 + RedRunner (open-source Unity/IL2CPP game, replacing the
 internal-only SpinCube test app as the "real game" showcase).
-Current milestone: pre-v3 UI cleanup CLOSED (2026-11-01) — 8 UI/
-discoverability fixes plus full memory-region labeling implemented,
-committed, and live-verified on eeacollatz/Enigma (iOS); two real
-findings surfaced during live verification were root-caused and
-fixed the same session (see Active milestone below for full detail).
-v3 AI+MCP design/implementation starts next session, 2026-11-02.
+Pre-v3 UI cleanup CLOSED (2026-11-01) — 8 UI/discoverability fixes
+plus full memory-region labeling implemented, committed, and
+live-verified on eeacollatz/Enigma (iOS); two real findings surfaced
+during live verification were root-caused and fixed the same
+session.
+Current milestone: v3 AI+MCP, findings-JSON ingestion sub-feature
+CLOSED (2026-11-02) — implemented, extended with symbol+offset
+resolution and a cross-platform module-lookup fix (both found
+necessary via live device work, not speculative design), and
+live-validated end-to-end on BOTH platforms: iOS (eeacollatz) and
+Android (N4TIVE ch04, full real bypass confirmed via the app's own
+UI reaching Status: SOLVED). Rest of v3 (AI+MCP architecture, JEB
+MCP portion) still fully ahead.
 
 Paste or attach this file at the start of a new chat — with this
 assistant, a different LLM, or any capable assistant — to resume MACE
@@ -141,18 +148,50 @@ and to any LLM assistant working the project, not just one specific one.
 - v3 (AI + MCP, NowSecure demo target): demo lineup and narrative
   finalized 2026-10-31 (see ROADMAP.md's dated entry) — iOS =
   eeacollatz, Android = N4TIVE ch03/ch04 + RedRunner. Design/
-  implementation work starts 2026-11-02, now that the pre-v3 UI
-  cleanup above is closed. Includes a new scoped feature: findings-JSON
-  ingestion (a tool-agnostic JSON a static-RE tool could produce,
-  which MACE's orchestration layer actually reads and acts on —
-  sets breakpoints, annotates the context panel — rides the current
-  "Reverse Engineer Anything" moment as the pitch narrative without
-  wiring up REA itself). Draft schema and minimum viable scope in
-  BACKLOG.md's 2026-10-31 entry.
+  implementation work started 2026-11-02, now that the pre-v3 UI
+  cleanup above is closed.
+  - Findings-JSON ingestion sub-feature: CLOSED (2026-11-02). A
+    tool-agnostic JSON a static-RE tool could produce, which MACE's
+    orchestration layer actually reads and acts on — sets
+    breakpoints, annotates the context panel — rides the current
+    "Reverse Engineer Anything" moment as the pitch narrative without
+    wiring up REA itself. Draft schema in BACKLOG.md's 2026-10-31
+    entry; MVP (loader, registry, panel annotation,
+    mace_load_findings command) committed and live-validated on iOS
+    the same day, both symbol- and address/RVA-resolution paths
+    confirmed landing identically (findings/eeacollatz.json).
+    Extended same day with `offset` support (symbol + byte offset,
+    for a finding that isn't at a function's entry point — found
+    necessary while scoping N4TIVE ch04's real patch site) and a
+    module-resolution fix (both the address and offset paths had
+    assumed the target's main executable was module 0 — true on iOS,
+    false on Android, where the real target is always a separately
+    dlopen'd .so; now resolves by the findings-JSON's own `binary`
+    field instead). Both fixes found and fixed the same session via
+    live Android work, not speculative design. findings/n4tive_ch04.json
+    (three symbol+offset findings: verify_flag, check_tracer_pid,
+    check_ptrace) live-validated end to end on the Pixel 10a,
+    including a full real bypass — `mace_patch w8 1` at the
+    HMAC-compare gate, continue, and the app's own UI flipped to
+    Status: SOLVED with a nonsense input string. One accuracy bug in
+    a finding's note text (polarity backwards) caught live and fixed
+    same session. Full detail: BACKLOG.md's 2026-10-31 through
+    2026-11-02 entries under "Findings-JSON ingestion."
+  - Not yet done: N4TIVE ch03 and RedRunner findings JSONs. Rest of
+    v3 (AI+MCP architecture, JEB MCP portion) untouched.
 
 ## Immediate next work
-1. v3 AI+MCP design/implementation, starting 2026-11-02 — pre-v3 UI
-   cleanup (above) is done; this is now the only item on deck.
+1. N4TIVE ch03 and RedRunner findings JSONs — same pattern as ch04
+   (findings/n4tive_ch04.json), each disassembled fresh against live
+   hardware rather than reusing any prior session's captured
+   addresses. ch03's solve techniques (direct native-function-call
+   injection, a TOCTOU defeat via mid-call breakpoint+patch, a
+   standalone script for gate4) don't fit the simple
+   "breakpoint+annotation" findings-JSON model as naturally as
+   ch04/eeacollatz did — may need scoping down to whichever gates do
+   fit, rather than forcing all 4.
+2. Rest of v3: AI+MCP architecture design, JEB MCP portion. Not yet
+   started.
 
 Deferred, no session currently allocated:
 - N4TIVE's remaining challenges not already covered (XOR decryption,
@@ -162,7 +201,12 @@ Deferred, no session currently allocated:
   environment, or whichever device ends up used) supports
   qMemoryRegionInfo — determines how much of the heap/stack region
   labeling shows up live versus falling back to decimal. Worth
-  checking ahead of the actual demo, not just this dev iPad.
+  checking ahead of the actual demo, not just this dev iPad. Now a
+  cross-platform question, not just iOS: see the new Android
+  qMemoryRegionInfo finding under Device baseline below.
+- Alternative heap/stack classification (SP-proximity, malloc_size())
+  not dependent on qMemoryRegionInfo at all — parked for after v3,
+  BACKLOG.md's 2026-11-01/2026-11-02 entries.
 
 ## Validated targets (v2, complete — see ROADMAP.md Priority 1)
 - Frida-0x8 — mace_patch register flip, live syscall annotation.
@@ -221,6 +265,21 @@ qMemoryRegionInfo is not supported." Affects only the region-labeling
 feature's coarse heap/stack fallback; module/section labels (which
 don't need that packet) work normally. Worth re-checking on whichever
 device/debugserver build is actually used for the NowSecure demo.
+
+This Pixel 10a's lldb-server shows a different, more confusing
+qMemoryRegionInfo profile — confirmed 2026-11-02 during the N4TIVE
+ch04 Android session: it DID work (three real breakpoint hits
+correctly labeled non-module addresses), then started failing
+consistently right after a benign SIGCHLD/fork-stop (same documented
+`linker64`/zygote pattern as BACKLOG's 2026-10-20 entry), including
+on an address that had been successfully labeled moments earlier in
+the same session. CB's observation: yesterday's iOS failure showed a
+similar works-then-fails shape but with no correlating fork-stop
+event — plausibly a different root cause on each platform (iOS: the
+debugserver build genuinely never supports the packet; Android:
+possibly the fork event disrupts lldb-server's ability to keep
+answering it). Not confirmed as causal, just a correlation observed
+once. See BACKLOG.md's 2026-11-02 entry for full detail.
 
 When validating LLDB itself independently of MACE (e.g. isolating
 whether a problem is MACE's stop-hook logic or lldb's own behavior),
@@ -404,6 +463,15 @@ wrong or outdated as advice today. Do not re-derive or re-try these:
   supporting qMemoryRegionInfo at all (see device baseline note
   above). Real fix (commit e94b70b) reorders classification to try
   module/section resolution first, which doesn't need that packet.
+- Findings-JSON address/offset resolution assuming
+  `target.GetModuleAtIndex(0)` is the right module — SUPERSEDED
+  2026-11-02. True on iOS (one self-contained app binary, happened to
+  be module 0) but false on Android, where the real target library is
+  always a separately dlopen'd .so (confirmed live:
+  libch04_gauntlet.so at module index 355, app_process64 at 0). Fixed
+  (commit 480d384) by resolving the module by name via
+  `target.FindModule()` against the findings-JSON's own `binary`
+  field instead.
 
 ## Key reference docs (read these instead of re-deriving from scratch)
 - docs/android-setup.md — full Android lldb-server/connect sequence,

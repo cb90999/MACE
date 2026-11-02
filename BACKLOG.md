@@ -3084,3 +3084,71 @@ MACELoadFindings.__call__ (stop_hook.py) should say that directly, e.g.
 "Check via 'mace_grep <name> image list'" instead of just "Check 'image
 list'" -- shortcuts the exact confusion hit tonight for the next person (or
 session) who sees this warning.
+
+
+## Address classification redesign (2nd-opinion review, deferred until V3 is stable) (2026-11-02)
+Source: CB got a second opinion from a friend on today's memory-region-labeling
+findings (qMemoryRegionInfo's iOS hard-gap and Android works-then-fails-after-
+fork-stop). Explicit CB direction: do NOT act on this now, don't deviate from
+tomorrow's V3 plan -- revisit once V3 implementation reaches a stable point.
+
+Core reframe: stop treating "memory region labeling" as one authoritative
+label backed by a single remote-stub capability (qMemoryRegionInfo), which
+today's findings prove is not stable enough to be a core UI primitive on
+either platform. Reframe the question from "what region is this" to "what
+can I reliably say about this value" -- a tiered classifier that ranks
+evidence by reliability and never claims more certainty than it has, rather
+than one API either fully working or silently degrading.
+
+Proposed tiers, each independent and gracefully degrading:
+1. Module/section resolution (already the primary path post-e94b70b/480d384,
+   doesn't depend on qMemoryRegionInfo at all) -- `[Enigma.__TEXT]`,
+   `[libeea.so.__DATA]`. Make this Tier 1, not a fallback -- it already is,
+   architecturally, just worth stating explicitly.
+2. Stack-relative classification -- compare against `sp` (already read every
+   stop), label as `stack+/-0xNNN` (a signed delta) rather than a bare
+   `[stack]`, since proximity isn't the same as authoritative ownership.
+   Avoid a single hardcoded window size; document it explicitly as
+   near-SP detection, not a stack-bounds claim.
+3. Pointer dereference/content classification -- if the address is readable,
+   show what it points to (a C string, an Objective-C class name, a byte
+   count) rather than where it lives. Argues this may be more useful to a
+   reverse engineer than heap/stack ever was. NOT automatic on every stop if
+   it requires `EvaluateExpression()` (executing code in the inferior) --
+   see point 5 below.
+4. Platform-specific map providers behind one abstraction, if authoritative
+   heap/stack labels are still wanted later -- `/proc/<pid>/maps` parsing on
+   Android (removes lldb-server's packet-capability state from the equation
+   entirely), a separate iOS-specific approach, rather than one LLDB API
+   forced to serve both OSes. Suggested structure: an `AddressClassifier`
+   with `ModuleClassifier`/`StackProximityClassifier`/
+   `AndroidProcMapsClassifier`/`IOSAllocatorClassifier` behind it, rather
+   than accumulating fallback logic inside one function.
+5. Anything using `malloc_size()`/`malloc_zone_from_ptr()` via
+   `EvaluateExpression()` (today's parked alternative-approach idea) should
+   NOT run automatically in the passive stop-hook -- executing allocator
+   code inside a stopped multithreaded app risks locks/reentrancy/latency
+   and breaks MACE's "panel is passive observation" property. Proposed
+   instead as an explicit on-demand command, e.g. `mace_classify_ptr <reg>`,
+   returning a fuller readable/module/near-stack/malloc-allocation report.
+
+Also proposed: make capability state explicit and sticky rather than
+re-querying blindly every stop -- a `RegionInfoCapability` state
+(UNKNOWN/AVAILABLE/UNAVAILABLE/DEGRADED) that flips AVAILABLE -> DEGRADED
+the first time the remote stub reports unsupported (matches today's live
+Android finding exactly: 3 successes then consistent failure after a
+fork-stop) and stops re-asking for the rest of the session, surfaced via a
+diagnostic command rather than silently retried on every address.
+
+Naming: proposed renaming `_classify_memory_region()` to
+`_classify_address()` to match what the feature actually becomes under this
+model -- a judgment call for whenever this is picked back up, not binding.
+
+Treats today's Android qMemoryRegionInfo-dies-after-fork-stop finding as a
+real, interesting upstream LLDB/lldb-server bug candidate worth further
+investigation eventually, but explicitly not worth redesigning MACE around
+on its own -- the broader tiered-classifier reframe stands regardless of
+whether that specific correlation is ever confirmed as causal.
+
+Not scheduled. Deferred until V3 implementation reaches a stable point, per
+CB's explicit direction.

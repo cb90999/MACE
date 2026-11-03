@@ -24,8 +24,8 @@ serializable result, "tier": "session"|"diagnostics"|"analyst",
 (extension seam #4, ROADMAP 2026-11-03) -- nothing routes on them
 yet; mode will drive the auto-approve-vs-ask permission gate once the
 orchestrator (step 3) exists. Ships with "ping" (the step-1 proof),
-"mace_get_register_context", and "mace_read_memory" (step 2)
-registered.
+"mace_get_register_context", "mace_read_memory", and
+"mace_get_backtrace" (step 2) registered.
 
 Thread safety (known, documented limitation -- see BACKLOG.md): the
 listener runs in a background thread, separate from lldb's own
@@ -53,6 +53,10 @@ LLDB_LOCK = threading.Lock()
 # accidental huge read from hanging the channel thread or blowing up
 # the JSON response size.
 MAX_READ_SIZE = 4096
+
+# Cap on a single mace_get_backtrace request, frames. Same rationale
+# as MAX_READ_SIZE -- bounds response size and lldb API work per call.
+MAX_BACKTRACE_FRAMES = 64
 
 # name -> {"fn": callable(debugger, args) -> JSON-serializable result,
 #          "tier": "session" | "diagnostics" | "analyst",
@@ -133,6 +137,55 @@ def _handle_read_memory(debugger, args):
 
 
 register_tool("mace_read_memory", _handle_read_memory,
+              tier="diagnostics", mode="read")
+
+
+def _handle_get_backtrace(debugger, args):
+    target = debugger.GetSelectedTarget()
+    if not target or not target.IsValid():
+        raise RuntimeError("no valid target")
+    process = target.GetProcess()
+    if not process or not process.IsValid():
+        raise RuntimeError("no running process")
+    thread = process.GetSelectedThread()
+    if not thread or not thread.IsValid():
+        raise RuntimeError("no selected thread")
+
+    max_frames = args.get("max_frames", 32)
+    if not isinstance(max_frames, int) or isinstance(max_frames, bool) or max_frames <= 0:
+        raise ValueError("'max_frames' must be a positive integer")
+    max_frames = min(max_frames, MAX_BACKTRACE_FRAMES)
+
+    num_frames = thread.GetNumFrames()
+    frames = []
+    for i in range(min(num_frames, max_frames)):
+        frame = thread.GetFrameAtIndex(i)
+        function = frame.GetFunction()
+        symbol = frame.GetSymbol()
+        if function.IsValid():
+            name = function.GetName()
+        elif symbol.IsValid():
+            name = symbol.GetName()
+        else:
+            name = "<unknown>"
+        module = frame.GetModule()
+        module_name = module.GetFileSpec().GetFilename() if module.IsValid() else ""
+        line_entry = frame.GetLineEntry()
+        file_line = ""
+        if line_entry.IsValid() and line_entry.GetFileSpec().IsValid():
+            file_line = f"{line_entry.GetFileSpec().GetFilename()}:{line_entry.GetLine()}"
+        frames.append({
+            "index": i,
+            "pc": f"0x{frame.GetPC():x}",
+            "function": name,
+            "module": module_name,
+            "file_line": file_line,
+        })
+
+    return {"frame_count": num_frames, "frames": frames}
+
+
+register_tool("mace_get_backtrace", _handle_get_backtrace,
               tier="diagnostics", mode="read")
 
 

@@ -41,10 +41,35 @@ Persist PATH:
 
 ## MACE Connection from M5
 
+One-command form (recommended):
+
+    lldb
+    (lldb) mace_connect_ios <ip> <port>
+    (lldb) mace_on
+
+Pass ip and port as separate arguments -- `mace_connect_ios <ip>:<port>`
+has been observed to append the default port again (e.g.
+192.168.4.22:1234 becomes 192.168.4.22:1234:1234 in the connection
+log), harmless since it still lands on the right port but worth
+avoiding. Confirmed live 2026-11-03.
+
+Manual form (troubleshooting only):
+
     lldb
     (lldb) platform select remote-ios
-    (lldb) process connect connect://192.168.4.22:1234
+    (lldb) process connect connect://<ip>:1234
     (lldb) mace_on
+
+Note: iOS uses `process connect`, NOT `platform connect` -- debugserver
+already attaches server-side at launch, so process connect both
+connects and creates/attaches the target in one step. Mixing these up
+produces "invalid target, create a target using the 'target create'
+command" (found while building mace_connect_ios, 2026-10-03).
+
+mace_connect_ios leaves the process stopped at the initial attach
+SIGSTOP -- `continue`/`c` is required before the app's UI becomes
+responsive, not just before a breakpoint hit. Forgetting this looks
+like a broken text field mid-session (confirmed 2026-11-01).
 
 ## Symbol Cache - eliminates parsing wait
 
@@ -95,6 +120,12 @@ Note: AppSync Unified repo (cydia.akemi.ai) offline as of July 2026.
 
 ## Session Management
 - App crash/exit: new PID, re-attach debugserver
+- debugserver is one-shot per connection -- it exits when lldb
+  quits/detaches on the Mac side, even if the app process itself is
+  untouched. After any `quit`/detach, relaunch
+  `debugserver 0.0.0.0:1234 --attach=<PID>` on the device (same PID
+  if the app wasn't killed) before reconnecting. Confirmed live
+  2026-11-01.
 - Always quit LLDB fully before reconnecting
 - Auto-Lock: Settings > Display & Brightness > Auto-Lock > Never
 

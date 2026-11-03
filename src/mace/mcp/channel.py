@@ -23,8 +23,9 @@ serializable result, "tier": "session"|"diagnostics"|"analyst",
 "mode": "read"|"write"}. tier/mode are metadata only for now
 (extension seam #4, ROADMAP 2026-11-03) -- nothing routes on them
 yet; mode will drive the auto-approve-vs-ask permission gate once the
-orchestrator (step 3) exists. Ships with "ping" (the step-1 proof) and
-"mace_get_register_context" (the first real tool, step 2) registered.
+orchestrator (step 3) exists. Ships with "ping" (the step-1 proof),
+"mace_get_register_context", and "mace_read_memory" (step 2)
+registered.
 
 Thread safety (known, documented limitation -- see BACKLOG.md): the
 listener runs in a background thread, separate from lldb's own
@@ -36,6 +37,8 @@ sharing a single lock across both call sites, deferred as a scoped
 decision for Dec (CB, 2026-11-03).
 """
 
+import lldb
+
 import dataclasses
 import json
 import os
@@ -45,6 +48,11 @@ import threading
 from mace.lldb.lldb_session import snapshot_from_frame
 
 LLDB_LOCK = threading.Lock()
+
+# Cap on a single mace_read_memory request, bytes. Prevents an
+# accidental huge read from hanging the channel thread or blowing up
+# the JSON response size.
+MAX_READ_SIZE = 4096
 
 # name -> {"fn": callable(debugger, args) -> JSON-serializable result,
 #          "tier": "session" | "diagnostics" | "analyst",
@@ -90,6 +98,41 @@ def _handle_get_register_context(debugger, args):
 
 
 register_tool("mace_get_register_context", _handle_get_register_context,
+              tier="diagnostics", mode="read")
+
+
+def _handle_read_memory(debugger, args):
+    target = debugger.GetSelectedTarget()
+    if not target or not target.IsValid():
+        raise RuntimeError("no valid target")
+    process = target.GetProcess()
+    if not process or not process.IsValid():
+        raise RuntimeError("no running process")
+
+    address = args.get("address")
+    size = args.get("size")
+    if address is None:
+        raise ValueError("'address' is required")
+    if size is None:
+        raise ValueError("'size' is required")
+    if isinstance(address, str):
+        address = int(address, 0)  # accepts "0x..." or a plain decimal string
+    if not isinstance(address, int) or isinstance(address, bool):
+        raise ValueError("'address' must be an int or a numeric string")
+    if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
+        raise ValueError("'size' must be a positive integer")
+    if size > MAX_READ_SIZE:
+        raise ValueError(f"'size' exceeds max of {MAX_READ_SIZE} bytes")
+
+    error = lldb.SBError()
+    data = process.ReadMemory(address, size, error)
+    if not error.Success():
+        raise RuntimeError(f"ReadMemory failed: {error.GetCString()}")
+
+    return {"address": f"0x{address:x}", "size": size, "hex": data.hex()}
+
+
+register_tool("mace_read_memory", _handle_read_memory,
               tier="diagnostics", mode="read")
 
 

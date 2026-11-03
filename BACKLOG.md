@@ -3152,3 +3152,30 @@ whether that specific correlation is ever confirmed as causal.
 
 Not scheduled. Deferred until V3 implementation reaches a stable point, per
 CB's explicit direction.
+
+
+## MCP channel lock scope: known limitation, deferred (2026-11-03)
+Source: V3 step 1 implementation (lldb-side MCP channel, src/mace/mcp/channel.py).
+
+channel.py's LLDB_LOCK serializes concurrent MCP tool calls against each
+other (two requests arriving close together on the socket), but does NOT
+provide mutual exclusion against stop_hook.py's handle_stop running on the
+stop-hook callback thread. Both threads can touch SBProcess/SBTarget
+without lldb's Python API being documented as safe under that kind of
+concurrent multi-thread access.
+
+True mutual exclusion would mean sharing one lock across both call sites --
+either channel.py's LLDB_LOCK or stop_hook.py's existing _handle_stop_lock
+(currently scoped only to handle_stop's build-and-print section) would need
+to become the single lock both sides acquire around any lldb API touch.
+
+CB's explicit call (2026-11-03): do not do this for Dec. A human
+single-stepping and an AI pipeline call colliding at the exact same instant
+is unlikely in a Dec demo setting, and the fix touches working stop-hook
+code for a race that is currently theoretical, not observed. Documented in
+channel.py's module docstring as a known limitation rather than silently
+left unmentioned.
+
+Not scheduled. Revisit if an actual race is observed, or when the channel
+sees heavier concurrent use than the Dec demo requires (e.g. post-GA with
+real orchestration traffic).

@@ -18,10 +18,13 @@ encoding handles this automatically).
 Request:  {"tool": "<name>", "args": {...}}
 Response: {"ok": true, "result": <any>} or {"ok": false, "error": "<msg>"}
 
-Tool registry: a plain dict, name -> callable(debugger, args) -> JSON-
-serializable result. Step 2 populates this with real mace_* tools;
-this module ships with only "ping" registered, to validate the channel
-end-to-end before any real tool is wired in.
+Tool registry: name -> {"fn": callable(debugger, args) -> JSON-
+serializable result, "tier": "session"|"diagnostics"|"analyst",
+"mode": "read"|"write"}. tier/mode are metadata only for now
+(extension seam #4, ROADMAP 2026-11-03) -- nothing routes on them
+yet; mode will drive the auto-approve-vs-ask permission gate once the
+orchestrator (step 3) exists. Ships with "ping" (the step-1 proof) and
+"mace_get_register_context" (the first real tool, step 2) registered.
 
 Thread safety (known, documented limitation -- see BACKLOG.md): the
 listener runs in a background thread, separate from lldb's own
@@ -33,30 +36,61 @@ sharing a single lock across both call sites, deferred as a scoped
 decision for Dec (CB, 2026-11-03).
 """
 
+import dataclasses
 import json
 import os
 import socket
 import threading
 
+from mace.lldb.lldb_session import snapshot_from_frame
+
 LLDB_LOCK = threading.Lock()
 
-_TOOLS = {}  # name -> callable(debugger, args) -> JSON-serializable result
+# name -> {"fn": callable(debugger, args) -> JSON-serializable result,
+#          "tier": "session" | "diagnostics" | "analyst",
+#          "mode": "read" | "write"}
+# tier/mode are metadata only for now (extension seam #4, ROADMAP
+# 2026-11-03) -- nothing routes on them yet. mode will drive the
+# auto-approve-vs-ask permission gate once the orchestrator (step 3)
+# exists.
+_TOOLS = {}
 
 _listener_thread = None
 _server_socket = None
 _shutdown = threading.Event()
 
 
-def register_tool(name, fn):
+def register_tool(name, fn, tier="diagnostics", mode="read"):
     """Register a tool handler. fn(debugger, args) -> JSON-serializable result."""
-    _TOOLS[name] = fn
+    _TOOLS[name] = {"fn": fn, "tier": tier, "mode": mode}
 
 
 def _handle_ping(debugger, args):
     return {"pong": True}
 
 
-register_tool("ping", _handle_ping)
+register_tool("ping", _handle_ping, tier="session", mode="read")
+
+
+def _handle_get_register_context(debugger, args):
+    target = debugger.GetSelectedTarget()
+    if not target or not target.IsValid():
+        raise RuntimeError("no valid target")
+    process = target.GetProcess()
+    if not process or not process.IsValid():
+        raise RuntimeError("no running process")
+    thread = process.GetSelectedThread()
+    if not thread or not thread.IsValid():
+        raise RuntimeError("no selected thread")
+    frame = thread.GetSelectedFrame()
+    if not frame or not frame.IsValid():
+        raise RuntimeError("no selected frame")
+    snap = snapshot_from_frame(frame)
+    return dataclasses.asdict(snap)
+
+
+register_tool("mace_get_register_context", _handle_get_register_context,
+              tier="diagnostics", mode="read")
 
 
 def _dispatch(debugger, request):
@@ -64,12 +98,12 @@ def _dispatch(debugger, request):
     args = request.get("args", {})
     if tool is None:
         return {"ok": False, "error": "request missing 'tool'"}
-    handler = _TOOLS.get(tool)
-    if handler is None:
+    entry = _TOOLS.get(tool)
+    if entry is None:
         return {"ok": False, "error": f"unknown tool: {tool!r}"}
     try:
         with LLDB_LOCK:
-            result = handler(debugger, args)
+            result = entry["fn"](debugger, args)
         return {"ok": True, "result": result}
     except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}

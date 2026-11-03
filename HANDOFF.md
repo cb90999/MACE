@@ -1,6 +1,6 @@
 # MACE — Session Handoff
 
-Last updated: 2026-11-02
+Last updated: 2026-11-03
 Repo branch: main
 Validated through: v2.5 (eeacollatz) CLOSED — iOS opaque-predicate bug
 found, root-caused, and fixed (the `charset_ok` block was undocumented
@@ -34,6 +34,18 @@ UI reaching Status: SOLVED). Rest of v3 (AI+MCP architecture) still
 fully ahead; JEB MCP integration confirmed out of December-deadline
 scope (2026-11-02, see Active milestone below) -- always a stretch
 goal, now explicitly closed out rather than left ambiguous.
+v3 architecture (four-layer: lldb -> MACE MCP channel -> separate MCP
+server process -> Claude Agent SDK orchestrator) designed and recorded
+2026-11-03 (ROADMAP.md), including Dec-scope decisions (single agent,
+tool-gated permissions; real enforced approval gate; DSPy routing and
+RedRunner/N4TIVE-ch03 findings-JSON deferred) and four extension seams
+for GA. Implementation started same day: step 1 (lldb-side MCP
+channel, src/mace/mcp/channel.py) and step 2's full read-only
+diagnostics tool set (mace_get_register_context, mace_read_memory,
+mace_get_backtrace) built and live-validated on real iOS hardware
+(Enigma) against lldb's own output. Remaining step 2 work (analyst/
+write tools) and steps 3-5 (orchestrator, eeacollatz end-to-end
+validation, RedRunner blind test) not yet started.
 
 Paste or attach this file at the start of a new chat — with this
 assistant, a different LLM, or any capable assistant — to resume MACE
@@ -191,20 +203,74 @@ and to any LLM assistant working the project, not just one specific one.
     decision and the demo's actual proof point that static analysis
     happened -- no JEB integration needed to make that case. See
     ROADMAP.md's matching 2026-11-02 note for full detail.
+  - V3 end-to-end architecture designed 2026-11-03 (ROADMAP.md dated
+    entry): four layers (lldb -> MACE MCP channel -> separate MCP
+    server process -> Claude Agent SDK orchestrator), with Dec-scope
+    decisions (single agent, tool-gated permissions, not three
+    separate agent contexts; real enforced human-approval gate via
+    the SDK's own permission system; DSPy local/cloud routing
+    deferred past Dec; RedRunner deliberately left WITHOUT a
+    pre-built findings-JSON, used instead as v3's first genuinely
+    blind orchestration test case; N4TIVE ch03 findings-JSON also
+    deferred) and four extension seams for GA (model selection behind
+    one interface; MCP transport as an abstraction; tool permission
+    policy as data; every tool tagged with a tier now even though
+    nothing routes on it yet).
+  - Step 1 (lldb-side MCP channel) CLOSED (2026-11-03):
+    src/mace/mcp/channel.py hosts a Unix domain socket inside the
+    live lldb session, newline-delimited JSON protocol
+    ({"tool":...,"args":...} -> {"ok":...,"result"/"error":...}),
+    dispatched through a tool registry tagged with tier
+    (session/diagnostics/analyst) and mode (read/write) metadata.
+    New mace_mcp_on/mace_mcp_off commands start/stop it. Known,
+    documented limitation: the channel's own lock only serializes
+    concurrent MCP calls against each other, not against
+    stop_hook.py's handle_stop on the stop-hook thread -- CB's
+    explicit call not to fix this for Dec (BACKLOG.md 2026-11-03).
+  - Step 2's read-only (diagnostics tier) tool set CLOSED (2026-11-03):
+    mace_get_register_context (reuses snapshot_from_frame directly,
+    per the JSON-via-direct-calls protocol decision -- no lldb
+    command-text scraping), mace_read_memory (capped at 4096
+    bytes/request), mace_get_backtrace (capped at 64 frames/request,
+    default 32). All three live-validated on real iOS hardware
+    (Enigma, collatz_eea_v2_check stop): register context matched the
+    mace_on panel exactly across every field; read_memory matched
+    lldb's own `memory read` byte-for-byte; get_backtrace's addresses
+    matched lldb's own `bt` exactly across all 32 default frames
+    (function names differ cosmetically -- full qualified names vs
+    bt's short display form -- not a bug).
+  - Not yet done: step 2's analyst/write tools (mace_set_breakpoint,
+    mace_step_instruction, mace_patch), step 3 (Claude Agent SDK
+    orchestrator), step 4 (end-to-end validation on eeacollatz), step
+    5 (RedRunner as first blind orchestration test).
 
 ## Immediate next work
-1. N4TIVE ch03 and RedRunner findings JSONs — same pattern as ch04
-   (findings/n4tive_ch04.json), each disassembled fresh against live
-   hardware rather than reusing any prior session's captured
-   addresses. ch03's solve techniques (direct native-function-call
-   injection, a TOCTOU defeat via mid-call breakpoint+patch, a
-   standalone script for gate4) don't fit the simple
-   "breakpoint+annotation" findings-JSON model as naturally as
-   ch04/eeacollatz did — may need scoping down to whichever gates do
-   fit, rather than forcing all 4.
-2. Rest of v3: AI+MCP architecture design. Not yet started. (JEB MCP
-   integration is NOT part of this -- confirmed out of December-
-   deadline scope 2026-11-02, see Active milestone above.)
+1. Step 2's analyst/write tools: mace_set_breakpoint,
+   mace_step_instruction, and mace_patch (reusing the existing
+   MACEPatch class's logic), each tagged tier=analyst, mode=write.
+   These mutate live process state, so more care needed than the
+   read-only tools -- mode=write metadata alone doesn't enforce
+   anything yet (that's step 3's job), so think through whether
+   channel.py itself needs any guardrail before step 3's real gate
+   exists, or whether that's acceptable to leave ungated for now.
+2. Step 3: Claude Agent SDK orchestrator, with model-selection
+   interface stubbed (extension seam #1) and the real permission gate
+   wired to mode=read/write tool metadata.
+3. Step 4: end-to-end validation on eeacollatz (known-good target).
+4. Step 5: RedRunner as v3's first genuinely blind orchestration test
+   case (deliberately no pre-built findings-JSON -- see Active
+   milestone above).
+
+- N4TIVE ch03 and RedRunner findings JSONs: BOTH deliberately deferred
+  (2026-11-03), not scheduled. RedRunner's deferral is permanent by
+  design (it's v3's blind test case, item 4 above); ch03's solve
+  techniques (direct native-function-call injection, a TOCTOU defeat
+  via mid-call breakpoint+patch, a standalone script for gate4) don't
+  fit the simple "breakpoint+annotation" findings-JSON model the way
+  ch04/eeacollatz did.
+- MCP channel lock-scope limitation (channel.py's LLDB_LOCK doesn't
+  serialize against stop_hook.py's handle_stop) -- deferred per CB's
+  explicit call, BACKLOG.md 2026-11-03 entry.
 
 Deferred, no session currently allocated:
 - N4TIVE's remaining challenges not already covered (XOR decryption,

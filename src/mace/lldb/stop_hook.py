@@ -15,6 +15,7 @@ import threading
 from mace.lldb.lldb_session import snapshot_from_frame, _get_breakpoint_id
 from mace.display.context_panel import render_panel, Color
 from mace.core import findings
+from mace.mcp import channel as mcp_channel
 
 WATCH_REGS = [0, 1]
 COMPARE    = None  # set per-session
@@ -94,9 +95,30 @@ def mace_off(debugger, command, result, internal_dict):
     print("[MACE] Context panel disabled.")
 
 
+def mace_mcp_on(debugger, command, result, internal_dict):
+    """Start the MACE MCP channel (a background Unix-socket listener
+    that a separate MCP server process can connect to). Optional arg:
+    socket path (default: /tmp/mace_mcp.sock)."""
+    socket_path = command.strip() or "/tmp/mace_mcp.sock"
+    try:
+        mcp_channel.start(debugger, socket_path)
+    except RuntimeError as e:
+        print(f"[MACE] {e}")
+        return
+    print(f"[MACE] MCP channel listening on {socket_path}")
+
+
+def mace_mcp_off(debugger, command, result, internal_dict):
+    """Stop the MACE MCP channel."""
+    mcp_channel.stop()
+    print("[MACE] MCP channel stopped.")
+
+
 def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand("command script add -f stop_hook.mace_on mace_on")
     debugger.HandleCommand("command script add -f stop_hook.mace_off mace_off")
+    debugger.HandleCommand("command script add -f stop_hook.mace_mcp_on mace_mcp_on")
+    debugger.HandleCommand("command script add -f stop_hook.mace_mcp_off mace_mcp_off")
     debugger.HandleCommand("command script add -c stop_hook.MACESwiftLoad mace_swift_load")
     debugger.HandleCommand("command script add -c stop_hook.MACEPatch mace_patch")
     debugger.HandleCommand("command script add -c stop_hook.MACEPatchHistory mace_patch_history")

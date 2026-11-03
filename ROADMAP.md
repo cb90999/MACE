@@ -1137,3 +1137,85 @@ in `_get_breakpoint_id()`) surfacing on different thread types — fixing that g
 close both in one pass, leaving three effectively distinct fixes: the sentinel guard, the
 per-image ASLR slide computation, and the concurrent-print interleaving in
 `MACEStopHook.handle_stop`.
+
+
+## V3 end-to-end architecture: four-layer design, Dec-scope decisions (2026-11-03)
+Source: V3 design session, first session after findings-JSON ingestion closed
+(2026-11-02). Whiteboarded end-to-end before deciding task order, per CB's
+explicit request not to start from a narrow slice.
+
+### Architecture (four layers, top to bottom)
+```
+lldb (MACE core, unchanged by v3 at all)
+| new: opens a local channel when a new command runs
+v
+MACE MCP server (separate PROCESS, new) -- connects to that channel,
+exposes mace_* tools over MCP. Deliberate: MACE/MACE Armory must be
+usable standalone (a human at the lldb prompt, exactly as today) OR
+driven by an AI pipeline, without the server being baked into MACE's
+core. This is why it's a separate process, not a Python module living
+inside stop_hook.py's existing command-registration pattern.
+| MCP
+v
+MACE Armory orchestrator (Claude Agent SDK, new) -- read tools
+(mace_get_register_context, mace_read_memory, mace_get_backtrace)
+auto-approved; write tools (mace_set_breakpoint, mace_patch,
+mace_step_instruction) gated behind the SDK's own permission prompt
+(inline CLI, same mechanism this very design session runs on). This
+IS the human-in-the-loop approval gate -- not narrated, not a
+separate hand-built protocol.
+```
+
+### Scoping decisions made this session
+- Orchestrator built on an existing agent framework, not from scratch --
+  specifically the Claude Agent SDK (CB's preference, confirmed): gets the
+  tool-call loop and, more importantly, the approval/permission plumbing
+  largely for free, since MCP servers are a first-class tool source for it
+  and its permission system is naturally per-tool.
+- Privilege separation: single agent, tool-gated, NOT three separate agent
+  contexts for Dec. jdb-agentic-debugger's three-tier split (session/
+  diagnostics/analyst, cited in this file's Aug 2026 v3 Design References)
+  stays a real post-GA direction, not Dec scope -- see extension seams
+  below for how today's choice doesn't block it later.
+- Human approval gate: REAL and enforced for Dec, not narrated -- the SDK's
+  own permission prompt on write-tool calls.
+- DSPy local/cloud routing: CONFIRMED out of December-deadline scope, same
+  treatment as JEB MCP integration (2026-11-02 entry above) -- demo calls
+  one model directly. Real post-GA direction, not abandoned.
+- RedRunner: deliberately NOT getting a pre-built findings-JSON like
+  eeacollatz/N4TIVE ch04 did. CB's call: use it as V3's own first genuinely
+  blind orchestration test case instead -- nothing pre-known, a real test
+  of the pipeline rather than one where the answer is already in hand. It
+  stays in the three-app demo lineup either way (games-market pitch).
+- N4TIVE ch03: findings-JSON deferred too, consistent with HANDOFF's
+  already-noted mismatch (its solve techniques -- direct function-call
+  injection, a TOCTOU defeat via mid-call breakpoint+patch, a standalone
+  script for gate4 -- don't fit the breakpoint+annotation model the way
+  ch04/eeacollatz did).
+
+### Extension seams required for GA, even though Dec's implementation
+### behind each is trivial -- explicit design intent, not speculative scope
+1. Model selection goes through one interface/function, never inlined at
+   call sites. Dec: returns one fixed model. Post-GA: DSPy/llmfit routing
+   replaces what's behind the interface; nothing else in the orchestrator
+   changes.
+2. MCP server transport is an abstraction, not assumed-local. Dec: a local
+   socket (same machine). Post-GA: SSE server mode (already a named v3
+   item above) is transport implementation #2, not a redesign.
+3. Tool permission policy is data (a list/config), not hardcoded branching
+   logic. Dec: read=auto-approve, write=ask. Post-GA: a more complex
+   pipeline (e.g. a genuinely separate diagnostics-only agent) can define
+   its own policy against the same gate mechanism.
+4. Every MCP tool is tagged with a conceptual tier (session/diagnostics/
+   analyst) now, even though nothing routes on the tag yet for Dec. Costs
+   nothing today; means the three-tier split later is "add routing logic
+   on top of tags that already exist," not "re-categorize every tool from
+   scratch."
+
+### Still open, not resolved this session
+- Exact mechanism for the lldb-side "channel" the separate MCP server
+  process connects through (a local socket was proposed, not yet
+  committed to in detail -- transport abstraction above means this can be
+  decided without blocking the rest of the design).
+- Task breakdown and implementation order across all of the above --
+  next step after this entry.

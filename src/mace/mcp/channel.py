@@ -24,8 +24,8 @@ serializable result, "tier": "session"|"diagnostics"|"analyst",
 (extension seam #4, ROADMAP 2026-11-03) -- nothing routes on them
 yet; mode will drive the auto-approve-vs-ask permission gate once the
 orchestrator (step 3) exists. Ships with "ping" (the step-1 proof),
-"mace_get_register_context", "mace_read_memory", and
-"mace_get_backtrace" (step 2) registered.
+"mace_get_register_context", "mace_read_memory",
+"mace_get_backtrace", and "mace_set_breakpoint" (step 2) registered.
 
 Thread safety (known, documented limitation -- see BACKLOG.md): the
 listener runs in a background thread, separate from lldb's own
@@ -187,6 +187,67 @@ def _handle_get_backtrace(debugger, args):
 
 register_tool("mace_get_backtrace", _handle_get_backtrace,
               tier="diagnostics", mode="read")
+
+
+def _handle_set_breakpoint(debugger, args):
+    target = debugger.GetSelectedTarget()
+    if not target or not target.IsValid():
+        raise RuntimeError("no valid target")
+
+    symbol = args.get("symbol")
+    address = args.get("address")
+    offset = args.get("offset", 0)
+    module_name = args.get("module")
+
+    if not symbol and address is None:
+        raise ValueError("'symbol' or 'address' is required")
+    if not isinstance(offset, int) or isinstance(offset, bool):
+        raise ValueError("'offset' must be an integer")
+    if offset and not symbol:
+        raise ValueError("'offset' requires 'symbol'")
+    if offset and not module_name:
+        raise ValueError(
+            "'offset' requires 'module' (the binary's loaded name, e.g. "
+            "'libfoo.so') to resolve the symbol against the right image"
+        )
+
+    bp = None
+    if symbol and offset:
+        module = target.FindModule(lldb.SBFileSpec(module_name))
+        if not module.IsValid():
+            raise RuntimeError(f"module '{module_name}' not found in target")
+        symbol_obj = module.FindSymbol(symbol, lldb.eSymbolTypeCode)
+        if not symbol_obj.IsValid():
+            raise RuntimeError(f"symbol '{symbol}' not found in module '{module_name}'")
+        file_addr = symbol_obj.GetStartAddress().GetFileAddress()
+        sb_addr = module.ResolveFileAddress(file_addr + offset)
+        if not sb_addr.IsValid():
+            raise RuntimeError(f"could not resolve {symbol}+{offset} in '{module_name}'")
+        bp = target.BreakpointCreateBySBAddress(sb_addr)
+    elif symbol:
+        bp = target.BreakpointCreateByName(symbol)
+    else:
+        if isinstance(address, str):
+            address = int(address, 0)
+        if not isinstance(address, int) or isinstance(address, bool):
+            raise ValueError("'address' must be an int or a numeric string")
+        bp = target.BreakpointCreateByAddress(address)
+
+    if bp is None or not bp.IsValid() or bp.GetNumLocations() == 0:
+        raise RuntimeError("breakpoint could not be resolved to any location")
+
+    locations = [f"0x{bp.GetLocationAtIndex(i).GetLoadAddress():x}"
+                 for i in range(bp.GetNumLocations())]
+
+    return {
+        "breakpoint_id": bp.GetID(),
+        "num_locations": bp.GetNumLocations(),
+        "locations": locations,
+    }
+
+
+register_tool("mace_set_breakpoint", _handle_set_breakpoint,
+              tier="analyst", mode="write")
 
 
 def _dispatch(debugger, request):

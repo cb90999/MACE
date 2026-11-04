@@ -332,6 +332,49 @@ def _handle_patch(debugger, args):
 register_tool("mace_patch", _handle_patch, tier="analyst", mode="write")
 
 
+def _handle_step_instruction(debugger, args):
+    target = debugger.GetSelectedTarget()
+    if not target or not target.IsValid():
+        raise RuntimeError("no valid target")
+    process = target.GetProcess()
+    if not process or not process.IsValid() or process.GetState() != lldb.eStateStopped:
+        raise RuntimeError("cannot step -- process is not stopped")
+    thread = process.GetSelectedThread()
+    if not thread or not thread.IsValid():
+        raise RuntimeError("no selected thread")
+    frame = thread.GetSelectedFrame()
+    if not frame or not frame.IsValid():
+        raise RuntimeError("no valid stack frame")
+
+    step_over = bool(args.get("over", False))
+    old_pc = frame.GetPC()
+    old_function = frame.GetFunctionName() or "?"
+
+    was_async = debugger.GetAsync()
+    debugger.SetAsync(False)
+    try:
+        thread.StepInstruction(step_over)
+    finally:
+        debugger.SetAsync(was_async)
+
+    new_thread = process.GetSelectedThread()
+
+    if not new_thread or not new_thread.IsValid():
+        raise RuntimeError("step completed but no valid thread afterward")
+    new_frame = new_thread.GetSelectedFrame()
+    if not new_frame or not new_frame.IsValid():
+        raise RuntimeError("step completed but no valid stack frame afterward")
+
+    snapshot = dataclasses.asdict(snapshot_from_frame(new_frame))
+    snapshot["old_pc"] = f"0x{old_pc:x}"
+    snapshot["old_function"] = old_function
+    snapshot["step_over"] = step_over
+    return snapshot
+
+
+register_tool("mace_step_instruction", _handle_step_instruction, tier="analyst", mode="write")
+
+
 def _dispatch(debugger, request):
     tool = request.get("tool")
     args = request.get("args", {})

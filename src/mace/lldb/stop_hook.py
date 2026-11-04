@@ -15,6 +15,7 @@ import threading
 from mace.lldb.lldb_session import snapshot_from_frame, _get_breakpoint_id
 from mace.display.context_panel import render_panel, Color
 from mace.core import findings
+from mace.core import patch_history
 from mace.mcp import channel as mcp_channel
 
 WATCH_REGS = [0, 1]
@@ -30,20 +31,23 @@ _hook_id   = None
 # character-by-character in the output (found 2026-10-28).
 _handle_stop_lock = threading.Lock()
 
-# In-session patch audit trail. Persists for the life of the lldb
-# session (not tied to any single breakpoint or stop-hook iteration),
-# so a full bypass sequence's patches can be reviewed/exported at the
-# end via mace_patch_history.
-_patch_history: list[dict] = []
+# In-session register-patch audit trail. Moved to core/patch_history.py
+# (2026-11-04) so both stop_hook.py and mcp/channel.py can record to
+# the same trail without a circular import -- stop_hook.py already
+# imports mcp/channel.py (step 1), so the reverse direction wasn't
+# available. See patch_history.py for the record_patch/
+# get_patch_history/clear_patch_history API; mace_patch_history below
+# still shows every patch applied this session, whether from a human
+# at the lldb prompt or the MCP channel (AI-driven).
 
 # In-session hardware-breakpoint audit trail, same lifecycle/purpose
-# as _patch_history above.
+# as the register-patch audit trail above.
 _hw_break_history: list[dict] = []
 
-# In-session memory-patch audit trail, same lifecycle/purpose as
-# _patch_history above, kept separate since mace_patch (register) and
-# mace_patch_mem (memory) are different operations worth reviewing
-# independently.
+# In-session memory-patch audit trail, same lifecycle/purpose as the
+# register-patch audit trail above, kept separate since mace_patch
+# (register) and mace_patch_mem (memory) are different operations
+# worth reviewing independently.
 _patch_mem_history: list[dict] = []
 
 # In-session snapshot history — every ContextSnapshot built while
@@ -248,7 +252,7 @@ class MACEPatch:
             "function":      func_name,
             "timestamp":     time.strftime("%H:%M:%S"),
         }
-        _patch_history.append(record)
+        patch_history.record_patch(record)
 
         bp_str = f" (breakpoint {bp_id})" if bp_id else ""
         result.AppendMessage(
@@ -282,17 +286,17 @@ class MACEPatchHistory:
         arg = command.strip()
 
         if arg == "clear":
-            count = len(_patch_history)
-            _patch_history.clear()
+            count = patch_history.clear_patch_history()
             result.AppendMessage(f"[MACE] Patch history cleared ({count} entries removed).")
             return
 
-        if not _patch_history:
+        history = patch_history.get_patch_history()
+        if not history:
             result.AppendMessage("[MACE] No patches applied yet this session.")
             return
 
         result.AppendMessage(f"{Color.BOLD}── MACE patch history ──{Color.RESET}")
-        for i, rec in enumerate(_patch_history, 1):
+        for i, rec in enumerate(history, 1):
             bp_str = f"  breakpoint {rec['breakpoint_id']}" if rec['breakpoint_id'] else ""
             result.AppendMessage(
                 f"  {Color.WHITE}[{i}]{Color.RESET}  {rec['timestamp']}  "

@@ -25,7 +25,8 @@ serializable result, "tier": "session"|"diagnostics"|"analyst",
 yet; mode will drive the auto-approve-vs-ask permission gate once the
 orchestrator (step 3) exists. Ships with "ping" (the step-1 proof),
 "mace_get_register_context", "mace_read_memory",
-"mace_get_backtrace", and "mace_set_breakpoint" (step 2) registered.
+"mace_get_backtrace", "mace_set_breakpoint", and "mace_patch"
+(step 2) registered.
 
 Thread safety (known, documented limitation -- see BACKLOG.md): the
 listener runs in a background thread, separate from lldb's own
@@ -44,8 +45,10 @@ import json
 import os
 import socket
 import threading
+import time
 
-from mace.lldb.lldb_session import snapshot_from_frame
+from mace.core import patch_history
+from mace.lldb.lldb_session import snapshot_from_frame, _get_breakpoint_id
 
 LLDB_LOCK = threading.Lock()
 
@@ -248,6 +251,85 @@ def _handle_set_breakpoint(debugger, args):
 
 register_tool("mace_set_breakpoint", _handle_set_breakpoint,
               tier="analyst", mode="write")
+
+
+def _handle_patch(debugger, args):
+    target = debugger.GetSelectedTarget()
+    if not target or not target.IsValid():
+        raise RuntimeError("no valid target")
+    process = target.GetProcess()
+    if not process or not process.IsValid() or process.GetState() != lldb.eStateStopped:
+        raise RuntimeError("cannot patch -- process is not stopped")
+    thread = process.GetSelectedThread()
+    if not thread or not thread.IsValid():
+        raise RuntimeError("no selected thread")
+    frame = thread.GetSelectedFrame()
+    if not frame or not frame.IsValid():
+        raise RuntimeError("no valid stack frame")
+
+    reg_name = args.get("register")
+    value = args.get("value")
+    if not reg_name:
+        raise ValueError("'register' is required")
+    if value is None:
+        raise ValueError("'value' is required")
+
+    reg_value = frame.FindRegister(reg_name)
+    if not reg_value.IsValid():
+        raise ValueError(f"unknown register '{reg_name}'")
+
+    if isinstance(value, str):
+        new_value = int(value, 0)
+    elif isinstance(value, int) and not isinstance(value, bool):
+        new_value = value
+    else:
+        raise ValueError("'value' must be an int or a numeric string")
+
+    old_value = reg_value.GetValueAsUnsigned()
+
+    error = lldb.SBError()
+    reg_value.SetValueFromCString(f"0x{new_value:x}", error)
+    if not error.Success():
+        raise RuntimeError(f"patch failed: {error.GetCString()}")
+
+    # Read back to confirm the write actually took, same discipline as
+    # MACEPatch (stop_hook.py) -- don't trust SetValueFromCString's
+    # success flag alone.
+    confirmed_value = reg_value.GetValueAsUnsigned()
+
+    pc = frame.GetPC()
+    bp_id = _get_breakpoint_id(thread)
+    func_name = frame.GetFunctionName() or "?"
+
+    record = {
+        "register":      reg_name,
+        "old_value":     old_value,
+        "new_value":     confirmed_value,
+        "pc":            pc,
+        "breakpoint_id": bp_id,
+        "function":      func_name,
+        "timestamp":     time.strftime("%H:%M:%S"),
+    }
+    patch_history.record_patch(record)
+
+    response = {
+        "register": reg_name,
+        "old_value": f"0x{old_value:x}",
+        "new_value": f"0x{confirmed_value:x}",
+        "pc": f"0x{pc:x}",
+        "function": func_name,
+        "breakpoint_id": bp_id,
+    }
+    if confirmed_value != new_value:
+        response["warning"] = (
+            f"requested 0x{new_value:x} but register reads back as "
+            f"0x{confirmed_value:x} -- write may have been truncated "
+            f"to the register's actual width"
+        )
+    return response
+
+
+register_tool("mace_patch", _handle_patch, tier="analyst", mode="write")
 
 
 def _dispatch(debugger, request):

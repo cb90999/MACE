@@ -35,9 +35,17 @@ Persist PATH:
 
 ## debugserver
 
-    which debugserver
+Binary name is version-suffixed, not just `debugserver` -- confirmed
+`debugserver-16` on this device/jailbreak (2026-11-04), matching the
+Procursus package name in Prerequisites above. `which debugserver`
+alone will not find it.
+
+    which debugserver-16
+    # if PATH doesn't resolve it: find / -name "debugserver-16" 2>/dev/null
+    # confirmed path on this device (2026-11-04): /var/jb/usr/bin/debugserver-16
+
     ps aux | grep <AppName>
-    debugserver 0.0.0.0:1234 --attach=<PID>
+    /var/jb/usr/bin/debugserver-16 0.0.0.0:1234 --attach=<PID>
 
 ## MACE Connection from M5
 

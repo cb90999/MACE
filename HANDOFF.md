@@ -1,6 +1,6 @@
 # MACE — Session Handoff
 
-Last updated: 2026-11-03
+Last updated: 2026-11-04
 Repo branch: main
 Validated through: v2.5 (eeacollatz) CLOSED — iOS opaque-predicate bug
 found, root-caused, and fixed (the `charset_ok` block was undocumented
@@ -46,6 +46,28 @@ mace_get_backtrace) built and live-validated on real iOS hardware
 (Enigma) against lldb's own output. Remaining step 2 work (analyst/
 write tools) and steps 3-5 (orchestrator, eeacollatz end-to-end
 validation, RedRunner blind test) not yet started.
+
+Session 2026-11-04: step 2's remaining analyst/write tools
+(mace_set_breakpoint, mace_patch, mace_step_instruction) CLOSED --
+all three live-validated on real iOS hardware (Enigma), with two real
+LLDB scripting bugs found and fixed via live testing (a stale
+SBThread handle reused after a resume/stop cycle; SBThread.
+StepInstruction() not blocking until the process actually stops
+unless the debugger is forced into synchronous mode). mace_patch
+required a new shared src/mace/core/patch_history.py module to avoid
+a circular import, unifying the AI-driven and human-driven patch
+audit trails into one mace_patch_history output -- confirmed live.
+Step 3 (Claude Agent SDK orchestrator) CLOSED as a working stub: new
+src/mace/orchestrator/ package plus requirements.txt and a dedicated
+.venv-orchestrator virtualenv, wrapping all six channel.py tools as
+SDK tools, restricting the agent to exactly those six (not the SDK's
+much wider default toolset), and gating the three write-tier tools
+behind an interactive y/n confirm. Live-validated end to end: SDK
+auth, a read tool cross-checked byte-for-byte against lldb's own
+output, both the write-gate deny and approve paths, and audit-trail
+unification holding through the full AI-pipeline path. Steps 4-5
+(eeacollatz end-to-end validation, RedRunner blind test) not yet
+started.
 
 Paste or attach this file at the start of a new chat — with this
 assistant, a different LLM, or any capable assistant — to resume MACE
@@ -239,31 +261,57 @@ and to any LLM assistant working the project, not just one specific one.
     matched lldb's own `bt` exactly across all 32 default frames
     (function names differ cosmetically -- full qualified names vs
     bt's short display form -- not a bug).
-  - Not yet done: step 2's analyst/write tools (mace_set_breakpoint,
-    mace_step_instruction, mace_patch), step 3 (Claude Agent SDK
-    orchestrator), step 4 (end-to-end validation on eeacollatz), step
-    5 (RedRunner as first blind orchestration test).
+  - Step 2's analyst/write (write-tier) tool set CLOSED (2026-11-04):
+    mace_set_breakpoint (raw load-address convention matching
+    mace_read_memory; offset path requires both symbol AND module),
+    mace_patch (reuses MACEPatch's SBValue patch-and-readback
+    discipline; required a new shared src/mace/core/patch_history.py
+    module to avoid a circular import with stop_hook.py, unifying the
+    AI-driven and human-driven patch audit trails into the same
+    mace_patch_history output), and mace_step_instruction (step-into/
+    step-over via SBThread.StepInstruction). All three live-validated
+    on real iOS hardware (Enigma). Two real LLDB scripting bugs found
+    and fixed via live testing on mace_step_instruction: a stale
+    SBThread handle reused across a resume/stop cycle (must re-fetch
+    via process.GetSelectedThread() after stepping), and
+    SBThread.StepInstruction() not blocking until the process actually
+    stops unless the debugger is forced into synchronous mode
+    (debugger.SetAsync(False)/restore).
+  - Step 3 (Claude Agent SDK orchestrator) CLOSED as a working stub
+    (2026-11-04): new src/mace/orchestrator/ package (mcp_client.py,
+    tools.py, gate.py, model.py, run.py) plus requirements.txt and a
+    dedicated .venv-orchestrator virtualenv (claude-agent-sdk,
+    gitignored). Wraps all six channel.py tools as Claude Agent SDK
+    tools, restricts the agent's visible tool set to exactly those six
+    (via ClaudeAgentOptions(tools=...) -- the SDK's own default
+    toolset otherwise includes unrelated built-ins like Agent/Glob/
+    SendMessage/CronCreate), and gates the three write-tier tools
+    behind an interactive y/n confirm wired as a PreToolUse hook
+    (model-selection stubbed as a single hardcoded constant, per the
+    Dec-scope decision -- extension seam #1). Live-validated end to
+    end on real iOS hardware: SDK auth via an Anthropic Console API
+    key, a read tool call (mace_get_register_context) cross-checked
+    byte-for-byte against lldb's own register read, both the
+    write-gate deny and approve paths (register patch correctly
+    blocked on 'n', correctly applied and cross-checked on 'y'), and
+    audit-trail unification holding through the full AI-pipeline path
+    (the orchestrator-driven patch appears in the same
+    mace_patch_history as step 2's direct-socket and human-driven
+    patches).
+  - Not yet done: step 4 (end-to-end validation on eeacollatz), step 5
+    (RedRunner as first blind orchestration test).
 
 ## Immediate next work
-1. Step 2's analyst/write tools: mace_set_breakpoint,
-   mace_step_instruction, and mace_patch (reusing the existing
-   MACEPatch class's logic), each tagged tier=analyst, mode=write.
-   These mutate live process state, so more care needed than the
-   read-only tools -- mode=write metadata alone doesn't enforce
-   anything yet (that's step 3's job), so think through whether
-   channel.py itself needs any guardrail before step 3's real gate
-   exists, or whether that's acceptable to leave ungated for now.
-2. Step 3: Claude Agent SDK orchestrator, with model-selection
-   interface stubbed (extension seam #1) and the real permission gate
-   wired to mode=read/write tool metadata.
-3. Step 4: end-to-end validation on eeacollatz (known-good target).
-4. Step 5: RedRunner as v3's first genuinely blind orchestration test
+1. Step 4: end-to-end validation on eeacollatz (known-good target) --
+   drive a full assessment through the orchestrator rather than the
+   single-tool-call tests used to validate step 3's plumbing.
+2. Step 5: RedRunner as v3's first genuinely blind orchestration test
    case (deliberately no pre-built findings-JSON -- see Active
    milestone above).
 
 - N4TIVE ch03 and RedRunner findings JSONs: BOTH deliberately deferred
   (2026-11-03), not scheduled. RedRunner's deferral is permanent by
-  design (it's v3's blind test case, item 4 above); ch03's solve
+  design (it's v3's blind test case, item 2 above); ch03's solve
   techniques (direct native-function-call injection, a TOCTOU defeat
   via mid-call breakpoint+patch, a standalone script for gate4) don't
   fit the simple "breakpoint+annotation" findings-JSON model the way
@@ -271,6 +319,13 @@ and to any LLM assistant working the project, not just one specific one.
 - MCP channel lock-scope limitation (channel.py's LLDB_LOCK doesn't
   serialize against stop_hook.py's handle_stop) -- deferred per CB's
   explicit call, BACKLOG.md 2026-11-03 entry.
+- tier/mode metadata duplication between channel.py's _TOOLS registry
+  and orchestrator/gate.py's hardcoded write-tool list -- documented
+  as a known limitation, BACKLOG.md 2026-11-04 entry.
+- mace_get_register_context's pc/lr/sp/fp returned as raw decimal ints
+  -- accurate but awkward for an LLM to hex-convert by hand (caught
+  once in live testing). Possible future enhancement, BACKLOG.md
+  2026-11-04 entry.
 
 Deferred, no session currently allocated:
 - N4TIVE's remaining challenges not already covered (XOR decryption,

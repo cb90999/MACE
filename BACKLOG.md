@@ -3179,3 +3179,73 @@ left unmentioned.
 Not scheduled. Revisit if an actual race is observed, or when the channel
 sees heavier concurrent use than the Dec demo requires (e.g. post-GA with
 real orchestration traffic).
+
+
+## Orchestrator tier/mode metadata duplication: known limitation, deferred (2026-11-04)
+
+Step 3's orchestrator (src/mace/orchestrator/) needs to know which three of
+the six MACE MCP tools are write-tier, so gate.py's interactive y/n confirm
+only prompts for mace_patch, mace_set_breakpoint, and mace_step_instruction,
+not the three read-only diagnostics tools.
+
+That information already exists in exactly one place: channel.py's _TOOLS
+registry, where every register_tool() call tags its handler with
+tier="session"|"diagnostics"|"analyst" and mode="read"|"write" (the
+extension seam #4 from the 2026-11-03 V3 architecture design). gate.py
+does not read that registry -- it hardcodes its own WRITE_TOOLS set of
+three fully-qualified SDK tool names (mcp__mace__mace_patch, etc.) that
+happens to agree with channel.py's mode=write tags today, by construction,
+not by any shared source of truth.
+
+Risk: if a future tool is added to channel.py and tagged mode="write" but
+the corresponding orchestrator/tools.py wrapper and gate.py's WRITE_TOOLS
+set aren't updated in lockstep, the gate silently fails open for that tool
+-- it would execute without ever prompting for approval, since gate.py has
+no way to discover the tag on its own.
+
+Fix would be either (a) have the orchestrator query channel.py for its
+tool registry (e.g. a new introspection call like mace_list_tools returning
+each tool's tier/mode) and build WRITE_TOOLS dynamically instead of
+hardcoding it, or (b) generate orchestrator/tools.py's @tool wrappers and
+gate.py's WRITE_TOOLS set from channel.py's _TOOLS registry at build/import
+time instead of hand-duplicating it.
+
+Not scheduled. Acceptable for the current 6-tool stub where the two lists
+are easy to keep in sync by eye; revisit before adding more write-tier
+tools, or before GA when the tool set is expected to grow.
+
+## mace_get_register_context register fields as raw decimal ints: possible future enhancement (2026-11-04)
+
+mace_get_register_context's response (and mace_step_instruction's, which
+reuses the same snapshot_from_frame/ContextSnapshot path) returns pc, lr,
+sp, and fp as raw decimal integers, not hex-formatted strings -- a direct
+consequence of dataclasses.asdict(ContextSnapshot) serializing the
+dataclass's native int fields as-is.
+
+This is accurate (confirmed byte-for-byte against lldb's own register
+read in live testing, both directly over the socket in step 2 and through
+the full Claude Agent SDK orchestrator in step 3), but it's awkward for an
+LLM consumer: an agent asked to report "the current pc" in the hex format
+a human reverse engineer expects has to convert a large decimal integer to
+hex by hand, which it got wrong once in live testing (reported a garbled,
+partially-converted hex string while correctly flagging its own
+uncertainty and falling back to the correct decimal value). The underlying
+data was never wrong -- only the model's own mental-arithmetic conversion
+of it.
+
+Other tools in the same codebase (mace_read_memory's address field,
+mace_set_breakpoint's locations, mace_patch's old_value/new_value/pc) all
+return hex-formatted strings (f"0x{x:x}") instead, so this is an
+inconsistency specific to the snapshot_from_frame/ContextSnapshot path, not
+a project-wide pattern.
+
+Possible fix: add hex-formatted companion fields (e.g. pc_hex, lr_hex,
+sp_hex, fp_hex) to ContextSnapshot's serialized output, or have the MCP
+tool layer (not the dataclass itself, to avoid touching the already-
+validated v2/v2.1 context panel code path) post-process these four fields
+into hex strings before returning to the agent.
+
+Not scheduled -- the underlying data is correct, this is a usability
+polish item for the AI-consumer path specifically. Revisit if this trips
+up orchestrator behavior again in step 4/5 testing, or opportunistically
+alongside other step 4 work.

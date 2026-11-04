@@ -1,0 +1,7 @@
+# MACE v3 AI-pipeline orchestrator (step 3) dependency.
+#
+# The core lldb extension (mace/lldb/, mace/mcp/) has no external
+# dependencies -- lldb's own Python API ships with Xcode and needs
+# nothing from this file. This is only needed to run
+# src/mace/orchestrator/.
+claude-agent-sdk

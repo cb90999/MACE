@@ -8,3 +8,6 @@ __pycache__/
 
 # Compiled binaries — tracked intentionally in targets/
 # (remove this if you want to exclude them)
+
+# Step-3 orchestrator virtualenv (not source, not portable)
+.venv-orchestrator/

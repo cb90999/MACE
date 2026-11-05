@@ -3214,7 +3214,7 @@ Not scheduled. Acceptable for the current 6-tool stub where the two lists
 are easy to keep in sync by eye; revisit before adding more write-tier
 tools, or before GA when the tool set is expected to grow.
 
-## mace_get_register_context register fields as raw decimal ints: possible future enhancement (2026-11-04)
+## mace_get_register_context register fields as raw decimal ints: RESOLVED (2026-11-04, fixed 2026-11-05)
 
 mace_get_register_context's response (and mace_step_instruction's, which
 reuses the same snapshot_from_frame/ContextSnapshot path) returns pc, lr,
@@ -3245,7 +3245,12 @@ tool layer (not the dataclass itself, to avoid touching the already-
 validated v2/v2.1 context panel code path) post-process these four fields
 into hex strings before returning to the agent.
 
-Not scheduled -- the underlying data is correct, this is a usability
-polish item for the AI-consumer path specifically. Revisit if this trips
-up orchestrator behavior again in step 4/5 testing, or opportunistically
-alongside other step 4 work.
+RESOLVED 2026-11-05: this prediction came true during real step-4 testing
+-- the orchestrator's agent reported wrong PC/LR hex values in its own
+narration (not just uncertain, actually wrong) while exercising
+mace_continue. Fixed via the exact approach sketched above: added
+_add_hex_fields() in channel.py as an MCP-layer post-processing step
+(ContextSnapshot/snapshot_from_frame itself untouched), wired into
+mace_get_register_context, mace_step_instruction, and mace_continue.
+Live-validated via the orchestrator: narrated PC/LR now match lldb's own
+panel byte-for-byte. Committed in 38e4cd4.

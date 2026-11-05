@@ -3254,3 +3254,112 @@ _add_hex_fields() in channel.py as an MCP-layer post-processing step
 mace_get_register_context, mace_step_instruction, and mace_continue.
 Live-validated via the orchestrator: narrated PC/LR now match lldb's own
 panel byte-for-byte. Committed in 38e4cd4.
+
+
+## mace_set_breakpoint's module filter doesn't apply to plain symbol lookups (2026-11-05, found via step 4 blind orchestration)
+
+Discovered live during step 4's first blind orchestrator run (eeacollatz/
+Enigma, iOS): mace_set_breakpoint's `module` argument is only applied
+when combined with `offset` (the symbol+offset resolution path). A plain
+`{"symbol": "unlock", "module": "Enigma"}` call ignores `module` entirely
+and resolves the symbol name system-wide -- in this case 85 locations,
+almost all unrelated system library hits (e.g.
+std::__1::__sp_mut::unlock(), fired repeatedly by a CoreAnalytics
+telemetry heartbeat), with only two real matches inside the Enigma
+binary itself.
+
+This is a real usability/correctness gap for an AI consumer operating
+blind (no human eyeballing the resolved locations before confirming the
+breakpoint): a plausible-sounding symbol name can silently become a
+noisy, system-wide breakpoint that repeatedly intercepts mace_continue
+before the agent ever reaches the code it actually meant to target. The
+orchestrator worked around this live by switching to raw address-based
+breakpoints once it identified the two real matches.
+
+Possible fix: make `module` filter plain symbol lookups too (not just
+the symbol+offset path), or have mace_set_breakpoint report the full
+resolved-location count and module breakdown so the caller can judge
+noise risk before confirming.
+
+Not scheduled. Revisit as part of step 4/5 hardening, alongside the
+breakpoint-delete gap and findings-JSON exposure gap below -- all three
+surfaced from the same blind run and are likely worth addressing
+together.
+
+## No breakpoint delete/disable tool in the MCP tool set (2026-11-05, found via step 4 blind orchestration)
+
+Same blind run surfaced a second, compounding gap: once the noisy
+system-wide `unlock` breakpoint above was set, there was no way for the
+orchestrator to remove or disable it. The 7-tool set (as of
+mace_continue's addition) has mace_set_breakpoint but no corresponding
+delete/disable tool, so a mistaken or overly broad breakpoint is
+permanent for the rest of the session once set.
+
+Possible fix: add a write-tier mace_delete_breakpoint (and/or
+mace_disable_breakpoint) tool, mirroring lldb's own `breakpoint
+delete`/`breakpoint disable` commands, gated behind the same write-tool
+approval flow as mace_set_breakpoint/mace_patch/mace_continue.
+
+Not scheduled. See cross-reference above.
+
+## Findings-JSON data not exposed to the orchestrator -- human-panel-only (2026-11-05, found via step 4 blind orchestration)
+
+Root-cause finding from the same blind run: mace_load_findings (and the
+findings data it loads) is an lldb command surfaced through the human-
+facing context panel (mace_on's stop-hook annotations), not an MCP tool.
+The orchestrator's 7-tool set has no way to read loaded findings data at
+all. Given a task to "use the loaded findings data if it helps," the
+agent had no mechanism to do so and instead guessed plausible symbol
+names (validate, checkPassword, unlock, verifyCode, submit, checkAnswer,
+isUnlocked) -- several of which resolved to nothing or to noisy system-
+wide matches (see above). This is very likely the root architectural
+cause behind both findings above: a tool with access to the real
+finding (collatz_eea_v2_check, from findings/eeacollatz.json) would
+likely have gone straight to the right breakpoint instead of guessing.
+
+This is a bigger design question than the two above -- it's the gap
+between step 3's findings-JSON ingestion work (2026-11-02, built for the
+human operator's context panel) and step 3's AI orchestrator work
+(2026-11-04), which were designed and built on different days without
+this seam in mind.
+
+Possible fix: a new read-tier mace_get_findings (or similar) MCP tool
+that returns the currently-loaded findings data as JSON, so the
+orchestrator can query it the same way a human operator reads the
+context panel.
+
+Not scheduled. Likely the highest-priority of the three findings above
+for actually closing step 4/5 cleanly -- revisit first.
+
+## orchestrator mcp_client.py socket timeout shorter than mace_continue's allowed range; unhandled BrokenPipeError on mismatch (2026-11-05, found via step 4 blind orchestration)
+
+Fourth finding from the same blind run, and the one that ended the
+session: orchestrator/mcp_client.py hardcodes TIMEOUT_SECONDS = 15 on
+its client-side socket, but mace_continue accepts (and the agent
+requested) timeout_seconds values up to 90 -- well within
+MAX_CONTINUE_TIMEOUT's 120s cap. When the agent requested a longer
+mace_continue wait, the client socket gave up and closed the connection
+at 15s while channel.py's _handle_continue was still legitimately
+waiting server-side. When the server later finished waiting and tried
+to send its response back over the now-closed socket, _serve_client hit
+an unhandled BrokenPipeError. This didn't crash the whole MCP channel
+(mace_mcp_off/mace_mcp_on recovered it cleanly, and the target process
+was never affected), but it did silently drop that one connection,
+producing a confusing "Connection refused" on the orchestrator's next
+call rather than a clear error, and ending the agent's run mid-task.
+
+Two independent fixes needed:
+1. orchestrator/mcp_client.py's TIMEOUT_SECONDS should be set relative
+   to the actual request (e.g. the caller's own timeout_seconds plus a
+   margin), not a flat 15s that's shorter than mace_continue's own
+   allowed range.
+2. channel.py's _serve_client should catch BrokenPipeError (and
+   similar connection-reset exceptions) around its response send,
+   logging/dropping gracefully instead of letting it propagate as an
+   unhandled exception in the connection-handling thread.
+
+Not scheduled. This one is small and mechanical (unlike the three
+findings above, which are design questions) -- good candidate to fix
+opportunistically alongside other step 4 work, or first given it's the
+one that actually blocks a mace_continue call with a long wait from
+working at all through the orchestrator.

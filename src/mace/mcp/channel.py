@@ -61,6 +61,14 @@ MAX_READ_SIZE = 4096
 # as MAX_READ_SIZE -- bounds response size and lldb API work per call.
 MAX_BACKTRACE_FRAMES = 64
 
+# Cap on a single mace_continue request's wait, seconds. mace_continue
+# blocks the channel's listener thread until the process reaches a
+# terminal state (stopped/crashed/exited/detached) or this timeout
+# elapses -- unlike every other tool, a continue can legitimately run
+# for a long time (or never return, if a breakpoint never fires), so
+# this bounds the worst case rather than leaving the thread wedged.
+MAX_CONTINUE_TIMEOUT = 120
+
 # name -> {"fn": callable(debugger, args) -> JSON-serializable result,
 #          "tier": "session" | "diagnostics" | "analyst",
 #          "mode": "read" | "write"}
@@ -75,9 +83,25 @@ _server_socket = None
 _shutdown = threading.Event()
 
 
+
 def register_tool(name, fn, tier="diagnostics", mode="read"):
     """Register a tool handler. fn(debugger, args) -> JSON-serializable result."""
     _TOOLS[name] = {"fn": fn, "tier": tier, "mode": mode}
+
+
+def _add_hex_fields(snapshot):
+    """Add pc_hex/lr_hex/sp_hex/fp_hex companion fields to a
+    ContextSnapshot's asdict() output. The decimal fields are accurate
+    (confirmed byte-for-byte against lldb's own output repeatedly) but
+    awkward for an LLM consumer to hex-convert by hand -- confirmed
+    live (2026-11-04, 2026-11-05) to produce garbled/wrong hex in the
+    agent's own narration while the underlying decimal data stayed
+    correct. Purely additive -- every existing field is untouched."""
+    for field in ("pc", "lr", "sp", "fp"):
+        value = snapshot.get(field)
+        if isinstance(value, int) and not isinstance(value, bool):
+            snapshot[f"{field}_hex"] = f"0x{value:x}"
+    return snapshot
 
 
 def _handle_ping(debugger, args):
@@ -101,7 +125,7 @@ def _handle_get_register_context(debugger, args):
     if not frame or not frame.IsValid():
         raise RuntimeError("no selected frame")
     snap = snapshot_from_frame(frame)
-    return dataclasses.asdict(snap)
+    return _add_hex_fields(dataclasses.asdict(snap))
 
 
 register_tool("mace_get_register_context", _handle_get_register_context,
@@ -365,7 +389,7 @@ def _handle_step_instruction(debugger, args):
     if not new_frame or not new_frame.IsValid():
         raise RuntimeError("step completed but no valid stack frame afterward")
 
-    snapshot = dataclasses.asdict(snapshot_from_frame(new_frame))
+    snapshot = _add_hex_fields(dataclasses.asdict(snapshot_from_frame(new_frame)))
     snapshot["old_pc"] = f"0x{old_pc:x}"
     snapshot["old_function"] = old_function
     snapshot["step_over"] = step_over
@@ -373,6 +397,80 @@ def _handle_step_instruction(debugger, args):
 
 
 register_tool("mace_step_instruction", _handle_step_instruction, tier="analyst", mode="write")
+
+
+def _handle_continue(debugger, args):
+    target = debugger.GetSelectedTarget()
+    if not target or not target.IsValid():
+        raise RuntimeError("no valid target")
+    process = target.GetProcess()
+    if not process or not process.IsValid() or process.GetState() != lldb.eStateStopped:
+        raise RuntimeError("cannot continue -- process is not stopped")
+
+    timeout = args.get("timeout_seconds", 30)
+    if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
+        raise ValueError("'timeout_seconds' must be a positive number")
+    timeout = min(timeout, MAX_CONTINUE_TIMEOUT)
+
+    listener = lldb.SBListener("mace_continue_listener")
+    process.GetBroadcaster().AddListener(listener, lldb.SBProcess.eBroadcastBitStateChanged)
+
+    was_async = debugger.GetAsync()
+    debugger.SetAsync(True)
+    final_state = None
+    try:
+        err = process.Continue()
+        if not err.Success():
+            raise RuntimeError(f"continue failed: {err.GetCString()}")
+
+        deadline = time.monotonic() + timeout
+        event = lldb.SBEvent()
+        while time.monotonic() < deadline:
+            # WaitForEvent's timeout must be a whole-second integer
+            # (uint32_t) -- poll in 1s slices and let this loop's own
+            # float-based deadline decide the real overall cutoff.
+            if not listener.WaitForEvent(1, event):
+                continue
+            if not lldb.SBProcess.EventIsProcessEvent(event):
+                continue
+            state = lldb.SBProcess.GetStateFromEvent(event)
+            if state in (lldb.eStateStopped, lldb.eStateCrashed,
+                         lldb.eStateExited, lldb.eStateDetached):
+                final_state = state
+                break
+            # eStateRunning and other transient states -- keep waiting
+    finally:
+        process.GetBroadcaster().RemoveListener(listener, lldb.SBProcess.eBroadcastBitStateChanged)
+        debugger.SetAsync(was_async)
+
+    if final_state is None:
+        return {
+            "status": "timeout",
+            "timeout_seconds": timeout,
+            "note": "process did not reach a stopped/crashed/exited state "
+                    "within the timeout; it may still be running. Check "
+                    "state with another tool, or call mace_continue again "
+                    "once it settles.",
+        }
+
+    if final_state == lldb.eStateExited:
+        return {"status": "exited", "exit_status": process.GetExitStatus()}
+    if final_state == lldb.eStateDetached:
+        return {"status": "detached"}
+
+    thread = process.GetSelectedThread()
+    if not thread or not thread.IsValid():
+        return {"status": "stopped", "note": "no valid thread after continue"}
+    frame = thread.GetSelectedFrame()
+    if not frame or not frame.IsValid():
+        return {"status": "stopped", "note": "no valid frame after continue"}
+
+    snapshot = _add_hex_fields(dataclasses.asdict(snapshot_from_frame(frame)))
+    snapshot["status"] = "crashed" if final_state == lldb.eStateCrashed else "stopped"
+    return snapshot
+
+
+register_tool("mace_continue", _handle_continue, tier="analyst", mode="write")
 
 
 def _dispatch(debugger, request):

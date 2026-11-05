@@ -171,6 +171,35 @@ async def mace_step_instruction(args):
     return {"content": [{"type": "text", "text": json.dumps(resp)}]}
 
 
+@tool(
+    "mace_continue",
+    "Resume execution and wait for the process to reach a terminal state "
+    "(stopped at a breakpoint, crashed, exited, or detached), up to a "
+    "timeout. WRITE operation (changes execution state) -- requires "
+    "operator approval. Returns status: 'stopped'/'crashed' (with a full "
+    "register-context snapshot of the new frame), 'exited' (with "
+    "exit_status), 'detached', or 'timeout' if nothing happened in time.",
+    {
+        "type": "object",
+        "properties": {
+            "timeout_seconds": {
+                "type": "number",
+                "description": "How long to wait for a stop before giving "
+                                "up (default 30, hard cap 120).",
+            },
+        },
+        "required": [],
+        "additionalProperties": False,
+    },
+)
+async def mace_continue(args):
+    call_args = {}
+    if "timeout_seconds" in args:
+        call_args["timeout_seconds"] = args["timeout_seconds"]
+    resp = await asyncio.to_thread(send_request, "mace_continue", call_args)
+    return {"content": [{"type": "text", "text": json.dumps(resp)}]}
+
+
 mace_server = create_sdk_mcp_server(
     name="mace",
     version="1.0.0",
@@ -181,6 +210,7 @@ mace_server = create_sdk_mcp_server(
         mace_set_breakpoint,
         mace_patch,
         mace_step_instruction,
+        mace_continue,
     ],
 )
 
@@ -191,4 +221,5 @@ ALL_TOOL_NAMES = [
     "mcp__mace__mace_set_breakpoint",
     "mcp__mace__mace_patch",
     "mcp__mace__mace_step_instruction",
+    "mcp__mace__mace_continue",
 ]

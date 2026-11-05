@@ -22,6 +22,7 @@ WRITE_TOOLS = {
     "mcp__mace__mace_patch",
     "mcp__mace__mace_set_breakpoint",
     "mcp__mace__mace_step_instruction",
+    "mcp__mace__mace_continue",
 }
 
 

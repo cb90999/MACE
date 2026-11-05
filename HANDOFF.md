@@ -1,6 +1,6 @@
 # MACE — Session Handoff
 
-Last updated: 2026-11-04
+Last updated: 2026-11-05
 Repo branch: main
 Validated through: v2.5 (eeacollatz) CLOSED — iOS opaque-predicate bug
 found, root-caused, and fixed (the `charset_ok` block was undocumented
@@ -298,7 +298,34 @@ and to any LLM assistant working the project, not just one specific one.
     (the orchestrator-driven patch appears in the same
     mace_patch_history as step 2's direct-socket and human-driven
     patches).
-  - Not yet done: step 4 (end-to-end validation on eeacollatz), step 5
+  - mace_continue (7th tool, added 2026-11-05, not in original step-3
+    plan): resumes execution and waits for a terminal process state
+    (stopped/crashed/exited/detached) via an SBListener-based bounded
+    poll (default 30s, hard cap 120s) -- needed to unblock step 4
+    once end-to-end testing began and surfaced that the original six
+    tools had no way to resume execution at all. Wired through
+    channel.py, orchestrator/tools.py, orchestrator/gate.py (added to
+    the write-tier gate, same approval flow as the other write tools),
+    and orchestrator/run.py. Along the way, found and fixed a real
+    LLDB API type-strictness bug (SBListener.WaitForEvent()'s timeout
+    argument is a uint32_t, not a Python float) and empirically
+    confirmed that mace_on's stop-hook panel fires identically whether
+    a resume was triggered by the interactive `continue` command or by
+    SBProcess.Continue() called from script code.
+  - Register pc/lr/sp/fp hex-formatting usability bug: FIXED
+    (2026-11-05). mace_get_register_context, mace_step_instruction, and
+    mace_continue all returned these fields as raw decimal ints
+    (accurate, but requiring the agent to hex-convert by hand) --
+    flagged as a deferred usability item on 2026-11-04, then recurred
+    as a real accuracy bug on 2026-11-05 during live step-4 testing
+    (the orchestrator's own narration reported wrong PC/LR values).
+    Fixed via a new _add_hex_fields() post-processing helper in
+    channel.py, adding pc_hex/lr_hex/sp_hex/fp_hex string fields
+    alongside the existing decimal ones. Live-validated via the
+    orchestrator: narrated PC/LR now match lldb's own panel
+    byte-for-byte. See BACKLOG.md's 2026-11-04/05 entry.
+  - Not yet done: step 4 (end-to-end validation on eeacollatz, now
+    resuming with mace_continue and the hex fix in place), step 5
     (RedRunner as first blind orchestration test).
 
 ## Immediate next work
@@ -321,11 +348,10 @@ and to any LLM assistant working the project, not just one specific one.
   explicit call, BACKLOG.md 2026-11-03 entry.
 - tier/mode metadata duplication between channel.py's _TOOLS registry
   and orchestrator/gate.py's hardcoded write-tool list -- documented
-  as a known limitation, BACKLOG.md 2026-11-04 entry.
-- mace_get_register_context's pc/lr/sp/fp returned as raw decimal ints
-  -- accurate but awkward for an LLM to hex-convert by hand (caught
-  once in live testing). Possible future enhancement, BACKLOG.md
-  2026-11-04 entry.
+  as a known limitation, BACKLOG.md 2026-11-04 entry. Still stands:
+  adding mace_continue on 2026-11-05 required manually adding it to
+  gate.py's WRITE_TOOLS set too, exactly the kind of manual sync this
+  entry warns about.
 
 Deferred, no session currently allocated:
 - N4TIVE's remaining challenges not already covered (XOR decryption,

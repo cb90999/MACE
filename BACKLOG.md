@@ -3180,6 +3180,24 @@ Not scheduled. Revisit if an actual race is observed, or when the channel
 sees heavier concurrent use than the Dec demo requires (e.g. post-GA with
 real orchestration traffic).
 
+CONCRETE REPRO OBSERVED (2026-11-05, step 4 guided testing): during the
+first guided (non-blind) step 4 pass on eeacollatz/Enigma, mace_continue
+(called through the orchestrator, timeout_seconds=10) returned a terminal
+"stopped" snapshot (pc inside collatz_eea_v2_check, stop_reason "unknown",
+breakpoint_id empty -- itself consistent with handle_stop processing the
+same stop event concurrently and not finding a breakpoint it owns).
+Moments later, a manual `process interrupt` in the lldb session found the
+process actually running again -- paused via SIGSTOP partway through the
+real validation routine's fail path (the `denied:` label,
+collatz_eea_v2.S:341), with no explicit `continue` issued in between. This
+is consistent with (though not definitively proven to be) exactly the
+theoretical race this entry describes: mace_continue's snapshot-and-return
+and handle_stop's own stop-event processing racing on the same underlying
+process state, with something resuming execution after mace_continue had
+already captured and returned its snapshot. Not investigated further or
+fixed, per CB's standing call above -- logged as the first real-world data
+point for "if an actual race is observed."
+
 
 ## Orchestrator tier/mode metadata duplication: known limitation, deferred (2026-11-04)
 

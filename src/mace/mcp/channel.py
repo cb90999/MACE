@@ -251,6 +251,13 @@ def _handle_set_breakpoint(debugger, args):
         if not sb_addr.IsValid():
             raise RuntimeError(f"could not resolve {symbol}+{offset} in '{module_name}'")
         bp = target.BreakpointCreateBySBAddress(sb_addr)
+    elif symbol and module_name:
+        # Filter the plain symbol lookup to one module too, not just the
+        # symbol+offset path above -- found 2026-11-05 (BACKLOG.md): an
+        # unscoped BreakpointCreateByName(symbol) can resolve to dozens
+        # of unrelated system-library hits sharing a common name (e.g.
+        # "unlock" matched 85 locations, almost all noise).
+        bp = target.BreakpointCreateByName(symbol, module_name)
     elif symbol:
         bp = target.BreakpointCreateByName(symbol)
     else:

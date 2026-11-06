@@ -324,15 +324,42 @@ and to any LLM assistant working the project, not just one specific one.
     alongside the existing decimal ones. Live-validated via the
     orchestrator: narrated PC/LR now match lldb's own panel
     byte-for-byte. See BACKLOG.md's 2026-11-04/05 entry.
-  - Not yet done: step 4 (end-to-end validation on eeacollatz, now
-    resuming with mace_continue and the hex fix in place), step 5
-    (RedRunner as first blind orchestration test).
+  - mace_get_findings and mace_delete_breakpoint (8th/9th tools, added
+    2026-11-06): closed the 4 gaps surfaced by the first blind step-4
+    run on 2026-11-05 (module filtering on plain-symbol breakpoints,
+    no way to remove a too-broad breakpoint, findings-JSON data
+    invisible to the orchestrator, client/server timeout mismatch
+    causing BrokenPipeError). Each live-validated individually (raw
+    socket, then through the orchestrator, then cross-checked
+    natively) and committed separately -- see BACKLOG.md's 2026-11-05/
+    06 entries for full detail and commit refs (2b7d7e1, ee61ff1,
+    3f630bb, 72b315b).
+  - Step 4 (end-to-end validation on eeacollatz): CLOSED (2026-11-06).
+    A single blind orchestrator prompt ("investigate... check
+    mace_get_findings first... get the app to display 'Access
+    Granted!'") drove the full chain unaided: called mace_get_findings
+    and got the real check_flag breakpoint with zero symbol-guessing
+    (the same symbol the 2026-11-05 blind run had guessed among 6
+    wrong guesses, now surfaced with a note and suggested_action
+    instead of blind luck); continued to the live hit; landed at the
+    denied: fail path after a garbage flag ("ffggggyy") failed the
+    cmp x20,x0 gate; reasoned past the finding's own suggested_action
+    (patch x20 at the comparison site) and instead stepped over the
+    `mov w0, #0` and patched x0 -- the AArch64 return-value register
+    for the Swift Bool -- from 0 to 1; resumed cleanly. Enigma rendered
+    "Access Granted!" (screenshot confirmed by CB). This is the first
+    fully successful end-to-end orchestrator-driven run in the
+    project, and did not reproduce the deferred MCP-channel/stop-hook
+    race (see below) despite an identical mace_continue/step/patch/
+    continue sequence to the run that surfaced it on 2026-11-05 --
+    suggestive but not conclusive, since the noisy/ambiguous
+    breakpoint conditions from that earlier run are exactly what
+    mace_get_findings eliminated.
+  - Not yet done: step 5 (RedRunner as first blind orchestration
+    test, deliberately no pre-built findings-JSON).
 
 ## Immediate next work
-1. Step 4: end-to-end validation on eeacollatz (known-good target) --
-   drive a full assessment through the orchestrator rather than the
-   single-tool-call tests used to validate step 3's plumbing.
-2. Step 5: RedRunner as v3's first genuinely blind orchestration test
+1. Step 5: RedRunner as v3's first genuinely blind orchestration test
    case (deliberately no pre-built findings-JSON -- see Active
    milestone above).
 

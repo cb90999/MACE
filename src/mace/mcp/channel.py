@@ -559,7 +559,17 @@ def _serve_client(debugger, conn):
                     response = {"ok": False, "error": f"invalid JSON: {e}"}
                 else:
                     response = _dispatch(debugger, request)
-                conn.sendall((json.dumps(response) + "\n").encode("utf-8"))
+                try:
+                    conn.sendall((json.dumps(response) + "\n").encode("utf-8"))
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    # The client gave up (e.g. its own socket timeout
+                    # fired) before this response was ready -- found
+                    # 2026-11-05 (BACKLOG.md), via a mace_continue call
+                    # with a long wait. Previously this propagated as
+                    # an unhandled exception out of the connection-
+                    # handling thread. Nothing to send it to now, so
+                    # drop the response and end this connection.
+                    return
 
 
 def _accept_loop(debugger, sock):

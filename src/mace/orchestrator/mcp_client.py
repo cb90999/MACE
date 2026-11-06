@@ -23,6 +23,16 @@ SOCKET_PATH = os.environ.get("MACE_MCP_SOCKET", "/tmp/mace_mcp.sock")
 RECV_BUFFER = 65536
 TIMEOUT_SECONDS = 15
 
+# mace_continue can legitimately block server-side for as long as its
+# own timeout_seconds allows (default 30, hard cap
+# MAX_CONTINUE_TIMEOUT=120 in channel.py). The client socket's timeout
+# must cover that plus a margin, or it gives up before the server
+# responds -- found 2026-11-05 (BACKLOG.md): a client-side timeout
+# shorter than the server's wait caused an unhandled BrokenPipeError
+# server-side and a confusing "Connection refused" on the next call.
+CONTINUE_TIMEOUT_MARGIN_SECONDS = 10
+DEFAULT_CONTINUE_TIMEOUT_SECONDS = 30
+
 
 def send_request(tool_name: str, args: dict) -> dict:
     """Send one {"tool": ..., "args": ...} request to the channel and
@@ -33,8 +43,14 @@ def send_request(tool_name: str, args: dict) -> dict:
     dict, not an exception, so the agent can read and react to it."""
     request = json.dumps({"tool": tool_name, "args": args}) + "\n"
 
+    if tool_name == "mace_continue":
+        requested = args.get("timeout_seconds", DEFAULT_CONTINUE_TIMEOUT_SECONDS)
+        sock_timeout = requested + CONTINUE_TIMEOUT_MARGIN_SECONDS
+    else:
+        sock_timeout = TIMEOUT_SECONDS
+
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    sock.settimeout(TIMEOUT_SECONDS)
+    sock.settimeout(sock_timeout)
     try:
         sock.connect(SOCKET_PATH)
         sock.sendall(request.encode())

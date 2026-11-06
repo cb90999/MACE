@@ -3364,7 +3364,7 @@ tool returns the real check_flag finding (comparison_site, cmp x20
 vs x0, breakpoint_id already set) with zero guessing, both over the
 raw socket and through the orchestrator. Committed in 3f630bb.
 
-## orchestrator mcp_client.py socket timeout shorter than mace_continue's allowed range; unhandled BrokenPipeError on mismatch (2026-11-05, found via step 4 blind orchestration)
+## orchestrator mcp_client.py socket timeout shorter than mace_continue's allowed range; unhandled BrokenPipeError on mismatch (2026-11-05, RESOLVED 2026-11-06)
 
 Fourth finding from the same blind run, and the one that ended the
 session: orchestrator/mcp_client.py hardcodes TIMEOUT_SECONDS = 15 on
@@ -3391,8 +3391,14 @@ Two independent fixes needed:
    logging/dropping gracefully instead of letting it propagate as an
    unhandled exception in the connection-handling thread.
 
-Not scheduled. This one is small and mechanical (unlike the three
-findings above, which are design questions) -- good candidate to fix
-opportunistically alongside other step 4 work, or first given it's the
-one that actually blocks a mace_continue call with a long wait from
-working at all through the orchestrator.
+RESOLVED 2026-11-06, last of the four: both fixes applied exactly as
+sketched above. mcp_client.py's socket timeout now scales with the
+requested timeout_seconds (plus a 10s margin) for mace_continue
+specifically, every other tool unchanged; channel.py's _serve_client
+now catches BrokenPipeError/ConnectionResetError/OSError around its
+response send. Live-validated: a mace_continue call with
+timeout_seconds=30 (past the old 15s client limit) now waits the
+full duration and returns a clean timeout result, with a follow-up
+call immediately after confirming the channel stayed healthy.
+Committed in 72b315b. All four of this blind run's findings are now
+closed.

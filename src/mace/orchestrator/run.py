@@ -52,6 +52,7 @@ async def run(task: str) -> None:
                 HookMatcher(matcher="mcp__mace__mace_set_breakpoint", hooks=[gate_write_tools]),
                 HookMatcher(matcher="mcp__mace__mace_step_instruction", hooks=[gate_write_tools]),
                 HookMatcher(matcher="mcp__mace__mace_continue", hooks=[gate_write_tools]),
+                HookMatcher(matcher="mcp__mace__mace_delete_breakpoint", hooks=[gate_write_tools]),
             ]
         },
     )

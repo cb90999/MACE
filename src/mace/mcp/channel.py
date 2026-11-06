@@ -284,6 +284,33 @@ register_tool("mace_set_breakpoint", _handle_set_breakpoint,
               tier="analyst", mode="write")
 
 
+def _handle_delete_breakpoint(debugger, args):
+    """Delete a breakpoint by its ID (as returned by mace_set_breakpoint
+    or mace_get_findings). Added 2026-11-06 -- found missing during
+    step 4 blind orchestration (BACKLOG.md's 2026-11-05 entry): once a
+    too-broad breakpoint was set, there was no way to remove it."""
+    target = debugger.GetSelectedTarget()
+    if not target or not target.IsValid():
+        raise RuntimeError("no valid target")
+
+    breakpoint_id = args.get("breakpoint_id")
+    if not isinstance(breakpoint_id, int) or isinstance(breakpoint_id, bool):
+        raise ValueError("'breakpoint_id' must be an integer")
+
+    bp = target.FindBreakpointByID(breakpoint_id)
+    if not bp or not bp.IsValid():
+        raise RuntimeError(f"no breakpoint with id {breakpoint_id}")
+
+    if not target.BreakpointDelete(breakpoint_id):
+        raise RuntimeError(f"failed to delete breakpoint {breakpoint_id}")
+
+    return {"deleted": True, "breakpoint_id": breakpoint_id}
+
+
+register_tool("mace_delete_breakpoint", _handle_delete_breakpoint,
+              tier="analyst", mode="write")
+
+
 def _handle_patch(debugger, args):
     target = debugger.GetSelectedTarget()
     if not target or not target.IsValid():

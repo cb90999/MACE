@@ -214,9 +214,34 @@ async def mace_get_findings(args):
     return {"content": [{"type": "text", "text": json.dumps(resp)}]}
 
 
+@tool(
+    "mace_delete_breakpoint",
+    "Delete a breakpoint by its ID (as returned by mace_set_breakpoint "
+    "or mace_get_findings). WRITE operation -- requires operator "
+    "approval.",
+    {
+        "type": "object",
+        "properties": {
+            "breakpoint_id": {
+                "type": "integer",
+                "description": "The breakpoint's ID to delete.",
+            },
+        },
+        "required": ["breakpoint_id"],
+        "additionalProperties": False,
+    },
+)
+async def mace_delete_breakpoint(args):
+    resp = await asyncio.to_thread(send_request, "mace_delete_breakpoint", {
+        "breakpoint_id": args["breakpoint_id"],
+    })
+    return {"content": [{"type": "text", "text": json.dumps(resp)}]}
+
+
 mace_server = create_sdk_mcp_server(
     name="mace",
     version="1.0.0",
+
     tools=[
         mace_get_register_context,
         mace_read_memory,
@@ -226,6 +251,7 @@ mace_server = create_sdk_mcp_server(
         mace_step_instruction,
         mace_continue,
         mace_get_findings,
+        mace_delete_breakpoint,
     ],
 )
 
@@ -238,4 +264,5 @@ ALL_TOOL_NAMES = [
     "mcp__mace__mace_step_instruction",
     "mcp__mace__mace_continue",
     "mcp__mace__mace_get_findings",
+    "mcp__mace__mace_delete_breakpoint",
 ]

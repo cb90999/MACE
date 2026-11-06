@@ -3308,7 +3308,7 @@ locations, down from 85. Committed in 2b7d7e1. The companion
 breakpoint-delete gap and findings-JSON exposure gap (below/above)
 addressed the same day -- see their own entries.
 
-## No breakpoint delete/disable tool in the MCP tool set (2026-11-05, found via step 4 blind orchestration)
+## No breakpoint delete/disable tool in the MCP tool set (2026-11-05, RESOLVED 2026-11-06)
 
 Same blind run surfaced a second, compounding gap: once the noisy
 system-wide `unlock` breakpoint above was set, there was no way for the
@@ -3322,9 +3322,15 @@ mace_disable_breakpoint) tool, mirroring lldb's own `breakpoint
 delete`/`breakpoint disable` commands, gated behind the same write-tool
 approval flow as mace_set_breakpoint/mace_patch/mace_continue.
 
-Not scheduled. See cross-reference above.
+RESOLVED 2026-11-06: added mace_delete_breakpoint (write-tier, gated
+the same as mace_patch/mace_set_breakpoint/mace_continue). Disable
+(as opposed to delete) was not added -- delete covers the actual
+problem this entry describes, and a disable/re-enable distinction
+wasn't needed for the use case that surfaced it. Live-validated via
+the orchestrator (set, delete, confirm gone, cross-checked natively).
+Committed in ee61ff1.
 
-## Findings-JSON data not exposed to the orchestrator -- human-panel-only (2026-11-05, found via step 4 blind orchestration)
+## Findings-JSON data not exposed to the orchestrator -- human-panel-only (2026-11-05, RESOLVED 2026-11-06)
 
 Root-cause finding from the same blind run: mace_load_findings (and the
 findings data it loads) is an lldb command surfaced through the human-
@@ -3350,8 +3356,13 @@ that returns the currently-loaded findings data as JSON, so the
 orchestrator can query it the same way a human operator reads the
 context panel.
 
-Not scheduled. Likely the highest-priority of the three findings above
-for actually closing step 4/5 cleanly -- revisit first.
+RESOLVED 2026-11-06, first of the three (as predicted above): added
+mace_get_findings exactly as sketched -- exposes core/findings.py's
+_active_findings registry via a new public list_active_findings()
+accessor. Live-validated: with findings/eeacollatz.json loaded, the
+tool returns the real check_flag finding (comparison_site, cmp x20
+vs x0, breakpoint_id already set) with zero guessing, both over the
+raw socket and through the orchestrator. Committed in 3f630bb.
 
 ## orchestrator mcp_client.py socket timeout shorter than mace_continue's allowed range; unhandled BrokenPipeError on mismatch (2026-11-05, found via step 4 blind orchestration)
 

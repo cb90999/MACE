@@ -3436,6 +3436,8 @@ Sequence (18 turns, zero symbol-guessing):
    UI rendered "Access Granted!" with the garbage input still visible
    in the title bar. Screenshot confirmed by CB.
 
+   ![Access Granted -- eeacollatz, 2026-11-06](docs/images/2026-11-06-eeacollatz-access-granted.png)
+
 This is the first fully successful end-to-end orchestrator-driven run
 in the project: no human symbol lookup, no human-chosen patch point,
 no pre-scripted sequence -- just the finding, the live register state,
@@ -3455,3 +3457,26 @@ worth re-checking against, not a fix.
 
 Step 4 is CLOSED. Step 5 (RedRunner, deliberately blind, no
 pre-built findings-JSON) is next -- see HANDOFF.md.
+
+## Deferred: golden-run regression test for the orchestrator (proposed 2026-11-06, not scheduled)
+
+CB asked whether today's successful eeacollatz run (above) could become
+a golden regression test. Not as a literal replay-and-diff: the tool
+sequence is live agent reasoning over live device state, not a fixed
+script -- re-running the same blind prompt against the same
+findings-JSON could legitimately take a different number of
+mace_continue poll turns, or choose a different (equally valid) patch
+point, since nothing pins the agent to x0 specifically. A transcript
+diff would be flaky by construction, not a real regression signal.
+
+Proposed shape instead, for whenever this gets scheduled: keep today's
+transcript as the reference artifact, and build a small harness that
+re-runs the same blind prompt against findings/eeacollatz.json and
+asserts on outcome invariants rather than exact steps -- e.g.
+mace_get_findings called before any breakpoint is set, no unhandled
+exceptions/crashes, run terminates within N turns, and the app ends in
+the "Access Granted!" state (checkable via a register/memory read, or
+a screenshot-diff if a screenshot tool gets wired into the
+orchestrator later). Pin the outcome, not the path.
+
+Not scheduled -- parked here so it isn't lost before step 5.

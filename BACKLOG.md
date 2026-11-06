@@ -3274,7 +3274,7 @@ Live-validated via the orchestrator: narrated PC/LR now match lldb's own
 panel byte-for-byte. Committed in 38e4cd4.
 
 
-## mace_set_breakpoint's module filter doesn't apply to plain symbol lookups (2026-11-05, found via step 4 blind orchestration)
+## mace_set_breakpoint's module filter doesn't apply to plain symbol lookups (2026-11-05, RESOLVED 2026-11-06)
 
 Discovered live during step 4's first blind orchestrator run (eeacollatz/
 Enigma, iOS): mace_set_breakpoint's `module` argument is only applied
@@ -3299,10 +3299,14 @@ the symbol+offset path), or have mace_set_breakpoint report the full
 resolved-location count and module breakdown so the caller can judge
 noise risk before confirming.
 
-Not scheduled. Revisit as part of step 4/5 hardening, alongside the
-breakpoint-delete gap and findings-JSON exposure gap below -- all three
-surfaced from the same blind run and are likely worth addressing
-together.
+RESOLVED 2026-11-06: added a module_name-filtered branch to
+_handle_set_breakpoint (channel.py) using SBTarget's
+(symbol_name, module_name) overload of BreakpointCreateByName when
+module is given alongside a plain symbol. Live-validated:
+{"symbol": "unlock", "module": "Enigma"} now resolves to exactly 2
+locations, down from 85. Committed in 2b7d7e1. The companion
+breakpoint-delete gap and findings-JSON exposure gap (below/above)
+addressed the same day -- see their own entries.
 
 ## No breakpoint delete/disable tool in the MCP tool set (2026-11-05, found via step 4 blind orchestration)
 

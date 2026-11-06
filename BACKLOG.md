@@ -3480,3 +3480,47 @@ a screenshot-diff if a screenshot tool gets wired into the
 orchestrator later). Pin the outcome, not the path.
 
 Not scheduled -- parked here so it isn't lost before step 5.
+
+## Deferred: condense raw lldb stop output into a MACE-native "stop context" block (proposed 2026-11-06, not scheduled)
+
+Feedback from a friend CB showed the mace_on panel to (screenshots,
+2026-11-06): below the MACE-specific registers/flags/call-chain
+section, the panel currently drops into raw, repetitive lldb stop
+text -- "Process N stopped", "* thread #1, queue = ..., stop reason =
+...", "frame #0: ...", the disassembly listing, then a second,
+largely redundant pass from (apparently) a trailing `process status`
+call, ending in "Target 0: (Enigma) stopped." The frame/function
+identity in that raw text duplicates what the call-chain section
+above it already shows. Net effect: MACE UI -> raw lldb dump -> MACE
+status bar, a visible seam rather than one coherent interface.
+
+Proposed fix (no heavy redesign, not more data -- less duplication,
+clearer hierarchy): replace the raw lldb stop text with a compact
+MACE-styled "stop context" block pulling the same handful of fields
+(stop reason/breakpoint id, thread name, frame symbol+offset, a few
+disassembly lines at pc) via the SB API already used for the
+register/call-chain panel, e.g.:
+
+  -- stop --------------------------------------------------------
+  STOPPED  breakpoint 1.1
+  thread #1  main-thread
+  mach_msg2_trap +0x0  [libsystem_kernel.dylib]
+
+  -> 0x1e8a84bec  mov x16, #-0x2f
+     0x1e8a84bf0  svc #0x80
+     0x1e8a84bf4  ret
+
+and suppress lldb's own native stop print plus the trailing
+"Target N: (...) stopped." line, since the bottom status bar already
+covers that. Proposed panel order top to bottom: registers, flags,
+call chain, stop context, disassembly, status bar.
+
+Likely implementation: a formatting/suppression change inside
+stop_hook.py's handle_stop, reusing fields already fetched for the
+existing panel sections (thread.GetStopReason(), frame symbol/offset,
+a short disassembly read at pc) rather than adding new data -- same
+risk class as the 2026-11-05 hex-formatting fix, not the lock-scope
+race. CB's explicit call: do not reprioritize for this -- add to the
+existing post-v3/pre-demo UI-improvements list (see the "Pre-v3 UI
+cleanup" precedent in HANDOFF.md for the kind of batch this belongs
+in) rather than touching stop_hook.py now.

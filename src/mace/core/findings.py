@@ -124,5 +124,14 @@ def get_finding_for_breakpoint(breakpoint_id: int) -> Optional[Finding]:
     return _active_findings.get(breakpoint_id)
 
 
+def list_active_findings() -> list[tuple[int, Finding]]:
+    """All currently-loaded (breakpoint_id, Finding) pairs. Added
+    2026-11-06 for mace_get_findings (mcp/channel.py) -- the MCP-layer
+    read tool that exposes this registry to the orchestrator, closing
+    the gap where the orchestrator had no way to see loaded findings
+    at all (BACKLOG.md's 2026-11-05 entry)."""
+    return list(_active_findings.items())
+
+
 def clear_findings() -> None:
     _active_findings.clear()

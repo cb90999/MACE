@@ -200,6 +200,20 @@ async def mace_continue(args):
     return {"content": [{"type": "text", "text": json.dumps(resp)}]}
 
 
+@tool(
+    "mace_get_findings",
+    "List every finding currently loaded via mace_load_findings, each "
+    "with the lldb breakpoint_id already set for it (symbol, address, "
+    "offset, kind, note, suggested_action). Read-only. Call this before "
+    "guessing symbol names or setting a new breakpoint -- the real "
+    "target may already have a breakpoint set on it.",
+    {"type": "object", "properties": {}, "additionalProperties": False},
+)
+async def mace_get_findings(args):
+    resp = await asyncio.to_thread(send_request, "mace_get_findings", {})
+    return {"content": [{"type": "text", "text": json.dumps(resp)}]}
+
+
 mace_server = create_sdk_mcp_server(
     name="mace",
     version="1.0.0",
@@ -211,6 +225,7 @@ mace_server = create_sdk_mcp_server(
         mace_patch,
         mace_step_instruction,
         mace_continue,
+        mace_get_findings,
     ],
 )
 
@@ -222,4 +237,5 @@ ALL_TOOL_NAMES = [
     "mcp__mace__mace_patch",
     "mcp__mace__mace_step_instruction",
     "mcp__mace__mace_continue",
+    "mcp__mace__mace_get_findings",
 ]

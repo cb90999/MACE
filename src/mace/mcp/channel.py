@@ -47,7 +47,7 @@ import socket
 import threading
 import time
 
-from mace.core import patch_history
+from mace.core import findings, patch_history
 from mace.lldb.lldb_session import snapshot_from_frame, _get_breakpoint_id
 
 LLDB_LOCK = threading.Lock()
@@ -471,6 +471,24 @@ def _handle_continue(debugger, args):
 
 
 register_tool("mace_continue", _handle_continue, tier="analyst", mode="write")
+
+
+def _handle_get_findings(debugger, args):
+    """Return every currently-loaded finding (from mace_load_findings),
+    keyed by the lldb breakpoint ID mace_load_findings already set for
+    it. Read-only -- this doesn't set or change anything, it just lets
+    an MCP caller see what a human operator running mace_load_findings
+    already set up, instead of guessing symbol names blind (see
+    BACKLOG.md's 2026-11-05 entry)."""
+    result = []
+    for breakpoint_id, finding in findings.list_active_findings():
+        entry = dataclasses.asdict(finding)
+        entry["breakpoint_id"] = breakpoint_id
+        result.append(entry)
+    return {"findings": result}
+
+
+register_tool("mace_get_findings", _handle_get_findings, tier="diagnostics", mode="read")
 
 
 def _dispatch(debugger, request):

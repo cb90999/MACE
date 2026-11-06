@@ -3402,3 +3402,56 @@ full duration and returns a clean timeout result, with a follow-up
 call immediately after confirming the channel stayed healthy.
 Committed in 72b315b. All four of this blind run's findings are now
 closed.
+
+## Step 4 closed: first full end-to-end orchestrator-driven run, eeacollatz (2026-11-06)
+
+Re-ran the same blind-orchestration test that surfaced the four
+findings above, now with all four fixes in place. Single prompt:
+"Investigate the Enigma app currently attached via MACE. Check
+mace_get_findings first before setting any breakpoints. Use what you
+learn to get the app to display 'Access Granted!' or an equivalent
+success state, patching registers if appropriate."
+
+Sequence (18 turns, zero symbol-guessing):
+1. mace_get_findings returned the one pre-loaded finding: check_flag
+   at 0x100004164, cmp x20,x0, note "the real pass/fail gate (x20 ==
+   magic1)", suggested_action "watch x20,x0; patch x20 if mismatch".
+   This is the exact symbol the 2026-11-05 blind run guessed among 6
+   wrong guesses with no way to confirm it -- now surfaced directly,
+   with guidance, by the tool built specifically to close that gap.
+2. mace_continue (polling through a non-stopped state while the user
+   tapped "Check" with a garbage flag, "ffggggyy") landed at the
+   denied: label, collatz_eea_v2.S:341 -- the magic-value comparison
+   had already failed by the time state was captured (x20=0, x0=0,
+   cpsr N=1 "less than").
+3. Rather than follow the finding's own suggested_action (patch x20
+   at the comparison site), the agent reasoned past it: stepped over
+   `mov w0, #0` (confirming x0 became the "denied" 0), then used
+   mace_patch to overwrite x0 -- the AArch64 return-value register for
+   the Swift Bool -- from 0 to 1. This is the function's actual return
+   value, not the compared operand; a different, arguably more
+   general patch point than the note suggested (works regardless of
+   which register the comparison happens to use).
+4. mace_continue resumed cleanly, no crash, no further trap. Enigma's
+   UI rendered "Access Granted!" with the garbage input still visible
+   in the title bar. Screenshot confirmed by CB.
+
+This is the first fully successful end-to-end orchestrator-driven run
+in the project: no human symbol lookup, no human-chosen patch point,
+no pre-scripted sequence -- just the finding, the live register state,
+and the agent's own reasoning about AArch64 calling convention.
+
+Also notable: this run executed an identical mace_continue / step /
+mace_patch / mace_continue sequence to the 2026-11-05 guided run that
+produced a live repro of the deferred MCP-channel/stop-hook race (the
+"CONCRETE REPRO OBSERVED" addendum above), and did NOT reproduce it.
+Not conclusive on its own -- one clean run doesn't rule out a race --
+but consistent with the working theory that the noisy/ambiguous
+multi-breakpoint conditions from that earlier blind run (11 breakpoints,
+hundreds of locations, before module filtering and findings exposure
+existed) were a significant contributing factor. The race itself
+remains open and deferred per CB's 2026-11-03 call; this is evidence
+worth re-checking against, not a fix.
+
+Step 4 is CLOSED. Step 5 (RedRunner, deliberately blind, no
+pre-built findings-JSON) is next -- see HANDOFF.md.

@@ -3674,3 +3674,62 @@ gap, confirmed and fixed independent of the orchestrator or AI layer.
 RedRunner is unblocked for both guided and blind assessment. Next:
 resume step 5 as originally planned -- a fresh blind orchestrator
 run against RedRunner now that the control path is reliable.
+
+
+## Step 5 (RedRunner): lldb tracing overhead itself causes self-kill under real interaction -- separate, deeper issue, RedRunner demoted to backlog (2026-11-07)
+
+Follow-up to the SIGXCPU/SIGPWR entry above. That fix was real and correct
+for its own problem (idle-state churn preventing `mace_continue` from
+detecting a stopped state) -- but a second, separate, and more fundamental
+issue surfaced once real gameplay interaction was tested with the fix in
+place.
+
+**Symptom:** with lldb attached (mace_on/mace_mcp_on/c, no breakpoints
+set, signal dispositions correctly configured either way -- tested with
+both SIGXCPU/SIGPWR pass=true and pass=false, same result both times),
+genuine touch interaction with the game on-device reliably caused the
+app to self-terminate within ~15 seconds. lldb reported
+`Process N exited with status = 9 (0x00000009)`.
+
+**Root cause, confirmed via adb logcat (not guessed):** this is Unity's
+own engine killing itself, not a MACE/signal bug. logcat showed a clean
+causal chain: `windowFocusChanged: false` -> `onPause` -> `pauseUnity`
+-> `ActivityTaskManager: Activity pause timeout` -> `Unity: Timeout
+(2000 ms) while trying to pause the Unity Engine.` -> further cascading
+timeouts (surface copy, window detach, activity destroy) -> `Unity:
+Quitting process` -> `Process: Sending signal. PID: N SIG: 9` -> `Zygote:
+Process N exited due to signal 9 (Killed)`. Unity's own pause-lifecycle
+watchdog has a hardcoded ~2-second timeout; when it can't complete in
+time, Unity's own code explicitly self-kills via SIGKILL as a fail-safe.
+
+**Isolated to lldb's tracing overhead specifically:** a clean baseline
+test (same interaction, same device, app relaunched with lldb NOT
+attached at all) ran with no crash, no slowdown, fully normal. CB's own
+observation attaching/detaching repeatedly: "when lldb is attached, it
+is very slow." Ptrace-based tracing of a 76-thread process imposes a
+real, structural per-signal/per-syscall overhead across every traced
+thread; under active gameplay (more Job System/GC/audio thread
+activity), that overhead compounds enough to blow Unity's hardcoded
+pause-timeout window even with zero breakpoints set.
+
+**Why this isn't a quick fix:** unlike the SIGXCPU/SIGPWR case, there's
+no single signal-disposition change that resolves this -- it's an
+inherent cost of ptrace-based tracing scaling with thread count,
+colliding with a hardcoded timeout in Unity's own engine code that
+MACE has no visibility into or control over.
+
+**CB's call (2026-11-07):** document as a v2-scope limitation and move
+on, rather than attempt a same-session fix. RedRunner is demoted from
+the active December demo lineup to a backlog/future-investigation item
+-- it remains a legitimate, real finding (MACE genuinely cannot yet
+sustain interactive debugging of a high-thread-count Unity target
+without risking a self-kill), just not one worth blocking the December
+deadline on. Evaluating a lower-thread-count Android target to replace
+RedRunner in the active demo lineup as next step.
+
+**Status:** CLOSED as a documented limitation (not fixed). Revisit
+post-December if time allows -- possible directions for a real fix:
+reducing per-stop MACE overhead (stop_hook.py's per-stop computation),
+investigating lldb/debugserver-side batching of signal handling across
+threads, or selectively detaching tracing from non-essential background
+threads.

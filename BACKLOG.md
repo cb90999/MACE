@@ -3733,3 +3733,57 @@ reducing per-stop MACE overhead (stop_hook.py's per-stop computation),
 investigating lldb/debugserver-side batching of signal handling across
 threads, or selectively detaching tracing from non-essential background
 threads.
+
+
+## Step 5 replacement target selected: Allsafe-Android (2026-11-07)
+
+Follow-up to the two entries above (RedRunner's SIGXCPU/SIGPWR fix and
+its separate, unfixed lldb-tracing-overhead self-kill issue). With
+RedRunner demoted to backlog, evaluated four replacement candidates
+for the active December demo lineup:
+
+- **OWASP UnCrackable Level 4 (r2Pay)** -- ruled out. Reading fatalSec's
+  published Frida solution (github.com/fatalSec/mas-crackme_solutions)
+  confirmed it has an active anti-ptrace defense: a dedicated watcher
+  thread plus a `/proc/self/status` TracerPid check, specifically
+  patched out in the Frida solution because Frida's injection method
+  doesn't trigger TracerPid the way a conventional ptrace-based
+  debugger does. lldb (and therefore MACE) attaches via ptrace and has
+  no such evasion -- this app is built to detect exactly MACE's
+  attachment method. Not a same-session fix; flagged as an interesting
+  future v2/v3 feature (TracerPid hiding) rather than a December target.
+- **Pocket Node** (RaheemJnr/pocket-node) -- a real, production-grade
+  Nervos CKB wallet (Kotlin/Compose, Rust-via-JNI light client). No
+  documented vulnerability, no anti-debug. Good stretch-goal/real-app
+  target, risky as the primary demo pick since there's no guaranteed
+  finding for a blind run.
+- **PriviMW-Wallet** -- a real Beam (MimbleWimble) privacy wallet +
+  P2P encrypted messenger. Three native libraries (`libwallet-jni.so`
+  -- Beam's C++ core, `libipfs-bindings.so`, `libvoice.so`), a
+  DApp WebView bridge with native TX approval (an interesting attack
+  surface), no anti-debug mentioned. Same risk profile as Pocket Node
+  (no guaranteed finding) plus unverified thread-count/complexity risk
+  given today's RedRunner lesson. Also a good stretch-goal candidate.
+- **OWASP UnCrackable Level 2** -- solid fallback. Native code, a real
+  anti-tampering mechanism to defeat (same "patch the check" narrative
+  as eeacollatz/N4TIVE), low complexity, single known target.
+
+**CB's call: Allsafe-Android** (t0thkr1s/allsafe-android), an
+intentionally-vulnerable training app with 12-15 progressive-difficulty
+challenges. Selected over Level 2 specifically because it offers the
+same native-code/patch-the-check narrative (challenge 12 is explicitly
+"native library password validation") but with a menu of challenges to
+fall back on if one turns out to have a MACE-incompatible quirk, rather
+than a single fixed target. Root detection exists (challenge 3,
+Frida-focused) but no anti-debugging/anti-tampering is documented --
+lower risk of a Level-4-style TracerPid trap. Well-known in the mobile
+AppSec training community (441 stars), likely low thread count (no
+game engine, standard Android app).
+
+Pocket Node and PriviMW-Wallet noted as credible stretch-goal targets
+("MACE on something real, not a toy") for later in the demo or future
+sessions, not part of the primary December lineup.
+
+**Next:** clone/build Allsafe-Android, confirm thread count empirically
+before committing further (per today's lesson -- don't assume), and
+scope which specific challenge(s) to target for the demo narrative.

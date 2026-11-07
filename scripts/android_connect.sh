@@ -42,5 +42,7 @@ lldb -o "platform select remote-android" \
      -o "settings set target.parallel-module-load false" \
      -o "process handle SIGSEGV -n false -p true -s false" \
      -o "process handle SIGBUS -n false -p true -s false" \
+     -o "process handle SIGXCPU -n false -p true -s false" \
+     -o "process handle SIGPWR -n false -p true -s false" \
      -o "platform connect connect://localhost:10500" \
      -o "process attach --pid ${PID}"

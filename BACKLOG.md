@@ -3787,3 +3787,28 @@ sessions, not part of the primary December lineup.
 **Next:** clone/build Allsafe-Android, confirm thread count empirically
 before committing further (per today's lesson -- don't assume), and
 scope which specific challenge(s) to target for the demo narrative.
+
+
+## Deferred post-GA: controlled Unity-thread-count investigation (proposed 2026-11-07, not scheduled)
+
+Follow-up to today's RedRunner finding (lldb tracing overhead +
+Unity's pause-lifecycle watchdog self-kill on a 76-thread target).
+76 threads is unusually high even for Unity -- driven by Job System
+workers, multiple GC/finalizer threads, FMOD audio, and Mali GPU
+driver threads all running concurrently on top of standard Android
+system threads. It's unknown whether this is a hard Unity-wide
+limitation or specific to RedRunner's thread-heavy profile; one data
+point earlier in the session (a long-running, not freshly-relaunched
+process) took a real breakpoint hit under active gameplay without
+crashing, suggesting this may be a threshold/timing problem rather
+than a flat wall.
+
+CB's proposal: post-GA, either find a second open-source Unity game
+with a simpler, more typical architecture (fewer Job System workers,
+simpler audio/physics setup, lower overall thread count) or build a
+minimal one deliberately architected to resemble a standard Unity
+game, specifically to test where the actual thread-count threshold
+sits -- rather than leaving "does MACE work on Unity games" as an
+open question defined by one unusually heavy target. Not scheduled;
+logged so the question isn't lost once Allsafe-Android's demo work
+is underway.

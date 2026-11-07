@@ -355,13 +355,31 @@ and to any LLM assistant working the project, not just one specific one.
     suggestive but not conclusive, since the noisy/ambiguous
     breakpoint conditions from that earlier run are exactly what
     mace_get_findings eliminated.
-  - Not yet done: step 5 (RedRunner as first blind orchestration
-    test, deliberately no pre-built findings-JSON).
+  - Step 5 (RedRunner as first blind orchestration test): ran
+    2026-11-07. Surfaced two real findings rather than a demo win --
+    see BACKLOG.md for full detail. First, a real MACE/lldb capability
+    gap (unconfigured SIGXCPU/SIGPWR pass-through starved mace_continue
+    of a terminal state on RedRunner's 76-thread target) was root-
+    caused and fixed (commits 24fae50, e6a4b3d, ee236f9) -- verified via
+    a clean breakpoint hit through mace_continue. Second, a deeper and
+    separate issue surfaced once real gameplay interaction was tested:
+    lldb's tracing overhead itself (independent of any signal) is heavy
+    enough on this target that Unity's own ~2s pause-lifecycle watchdog
+    times out and self-kills the app (confirmed via adb logcat, not
+    guessed -- commit 8b8b928). No quick fix exists for this second
+    issue. CB's call: demote RedRunner to backlog, replace it in the
+    active demo lineup with Allsafe-Android (t0thkr1s/allsafe-android),
+    selected over three other evaluated candidates (commit 9939d00).
+  - Not yet done: step 5 proper, against Allsafe-Android (building
+    and attaching not yet started).
 
 ## Immediate next work
-1. Step 5: RedRunner as v3's first genuinely blind orchestration test
-   case (deliberately no pre-built findings-JSON -- see Active
-   milestone above).
+1. Step 5: Allsafe-Android as v3's first genuinely blind orchestration
+   test case (deliberately no pre-built findings-JSON -- see Active
+   milestone above and BACKLOG.md's 2026-11-07 target-selection entry
+   for why RedRunner was replaced). Not yet started: clone/build the
+   app, confirm thread count empirically before committing further,
+   scope which specific challenge(s) to target.
 
 - N4TIVE ch03 and RedRunner findings JSONs: BOTH deliberately deferred
   (2026-11-03), not scheduled. RedRunner's deferral is permanent by

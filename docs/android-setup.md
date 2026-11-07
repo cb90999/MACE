@@ -98,6 +98,8 @@ consistently rather than improvising a different one per session.
     (lldb) settings set target.parallel-module-load false
     (lldb) process handle SIGSEGV -n false -p true -s false
     (lldb) process handle SIGBUS -n false -p true -s false
+    (lldb) process handle SIGXCPU -n false -p true -s false
+    (lldb) process handle SIGPWR -n false -p true -s false
     (lldb) platform connect connect://localhost:10500
 
 `settings set platform.plugin.remote-android.package-name` MUST be
@@ -109,6 +111,18 @@ The SIGSEGV/SIGBUS passthrough is standard practice for every Android
 session, not just a troubleshooting step: ART's JIT compiler generates
 routine SIGSEGVs as part of normal null-check-elimination — not real
 crashes.
+
+SIGXCPU/SIGPWR passthrough is likewise standard practice for any
+Android target with substantial background threading (Unity's Job
+System, GC/finalizer threads, audio engine threads, and similar). Without
+it, these background threads can repeatedly re-stop lldb on signals
+that were never configured with a disposition, faster than the
+aggregate process can settle into a single coherent stopped state —
+which starves `mace_continue` and friends of a terminal state to
+detect, even though nothing is actually crashing. Root-caused
+2026-11-07 against RedRunner, a 76-thread Unity/IL2CPP target — the
+first MACE target with anywhere near this thread count; see
+BACKLOG.md for the full investigation and verification.
 
 ## Launching and Attaching to the Target App
 

@@ -3524,3 +3524,92 @@ race. CB's explicit call: do not reprioritize for this -- add to the
 existing post-v3/pre-demo UI-improvements list (see the "Pre-v3 UI
 cleanup" precedent in HANDOFF.md for the kind of batch this belongs
 in) rather than touching stop_hook.py now.
+
+## Step 5 (RedRunner, blind run): process never settles into a stopped state MACE can act on -- real v2-scope gap, root cause not yet found (2026-11-07)
+
+Source: step 5's first blind-orchestration attempt on RedRunner (BayatGames,
+real open-source Unity/IL2CPP game, newly built for this session -- see
+HANDOFF.md). First target MACE has attached to with anywhere near this
+thread count: 76 threads at `thread list`, driven by Unity's Job System
+(`Job.Worker 0-3`, a dozen-plus `Background Job.N`), `AssetGarbageCol`
+(x4), GC/finalizer machinery, FMOD audio threads, and Mali GPU driver
+threads -- none of MACE's prior targets (eeacollatz, N4TIVE ch03/ch04,
+SpinCube) had anything close to this.
+
+**Symptom:** after `mace_on`/`mace_mcp_on`/`c`, the lldb terminal prints a
+repeating, periodic (roughly every few seconds, not continuous) sequence
+of lldb's own native stop-hook thread headers -- `-- Thread 30`,
+`-- Thread 33`, `-- Thread 62` -- with no MACE panel ever rendering for
+them (expected: `handle_stop` correctly skips `eStopReasonSignal` stops,
+per its existing "skip signal stops" branch). `process status` during
+this reports the process as genuinely `running`, not stopped. The blind
+orchestrator run's `mace_continue`/`mace_step_instruction` calls failed
+with "process is not stopped" at this point and could not proceed past
+initial exploration (found `check_flag`-equivalent breakpoint-setting
+worked, via `__android_log_print`, but could never verify a hit).
+
+**Hypothesis 1, tested and DISPROVEN:** suspected Unity's Job System was
+actively creating/destroying worker threads (thread-churn), each
+triggering an implicit ptrace stop under lldb. Tested directly: captured
+`thread list` (all 76 threads, by TID) three times across two full
+`c` / `process interrupt` cycles, including once with ~5s of genuine
+free-running time in between. All three listings were byte-for-byte
+identical -- same 76 TIDs every time. The thread pool is fully spun up
+and stable during idle gameplay; nothing is being created or torn down.
+Ruled out.
+
+**Hypothesis 2, current leading candidate, NOT yet confirmed:** a raw
+socket call direct to `channel.py` (bypassing the orchestrator and SDK
+entirely) issued `mace_continue` immediately after lldb's own terminal
+confirmed a clean `Process N stopped` state. The call was accepted
+cleanly -- no "not stopped" rejection this time, meaning `_handle_continue`
+correctly saw a stopped process and issued a real `process.Continue()`.
+It then correctly returned `{"status": "timeout", ...}` after 10s rather
+than erroring -- the handler is working as designed, it genuinely could
+not find a terminal state (stopped/crashed/exited/detached) to report.
+During that same window, the lldb terminal showed the identical
+`-- Thread 30/33/62` churn pattern, on a periodic (every-few-seconds)
+cadence -- this is the second independent confirmation of the same
+three specific threads being involved, not a one-off. Leading theory:
+these three threads (by name, at time of capture: `GC Finalizer`,
+`Job.Worker 2`, `Thread-3`) are genuinely re-stopping on a repeating
+cycle -- most likely a short-timeout signal-based wait pattern (a futex
+or semaphore wait with a periodic wake) rather than thread creation/
+destruction -- and this repeated stop/resume activity is preventing the
+whole process from ever reaching the single coherent "stopped" state
+`mace_continue`'s `SBListener`-based poll (added 2026-11-05) is built to
+detect.
+
+**Source investigation (RedRunner is open source, so this was checked
+directly rather than guessed):** grepped RedRunner's own `Assets/Scripts/`
+and the `SaveGameFree` asset package for `new Thread(`, `ThreadStart`,
+`Task.Run`, `BackgroundWorker` -- no matches in RedRunner's own C# code
+at all, which rules out custom game logic as the source. The only hit
+was a binary string match for "Thread" inside `FullSerializer.dll`
+(SaveGameFree's actual save-file serialization library, a precompiled
+third-party .NET assembly) -- circumstantial only, not proof of behavior,
+but consistent with the periodic (every-few-seconds) cadence observed:
+a save-game autosave or background-serialization thread doing short,
+repeated work is a plausible match for `Thread-3`'s generic, unnamed-
+thread default name. Not confirmed; `Job.Worker 2` and `GC Finalizer`
+are standard Unity-engine/ART internals, not RedRunner-specific, so a
+third-party-library origin for the one app-adjacent thread in the
+cycling set (`Thread-3`) is the most likely lead, not yet proven.
+
+**Status:** open. This is a real, reproducible MACE/lldb-level gap,
+confirmed independent of the orchestrator, the AI layer, or any
+findings-JSON question -- tested with a raw socket call with zero agent
+reasoning involved. Root-causing the actual signal/event mechanism on
+these three threads (and finding a fix -- e.g. per-thread continue
+policy instead of a blanket `process continue`, or filtering which
+threads `mace_continue`'s listener treats as relevant to the terminal-
+state check) is a real, scoped investigation, not a same-session fix.
+CB's call (2026-11-07): work this as a v2-scope MACE capability case
+(an Android/Unity target with real, active background threading does
+not currently reach a MACE-usable stopped state), separate from the
+step-5/v3-blind-test question -- RedRunner stays the deliberately-blind
+demo-lineup app in spirit, but is not currently usable for either a
+blind or a guided assessment until this is fixed. Decision on whether
+to pursue this fix before the December demo, or substitute a different,
+lower-thread-count Android game target, not yet made -- flagged as a
+real scope risk, not deferred silently.

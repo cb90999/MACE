@@ -3613,3 +3613,64 @@ blind or a guided assessment until this is fixed. Decision on whether
 to pursue this fix before the December demo, or substitute a different,
 lower-thread-count Android game target, not yet made -- flagged as a
 real scope risk, not deferred silently.
+
+
+## Step 5 (RedRunner): SIGXCPU/SIGPWR passthrough gap root-caused and fixed (2026-11-07)
+
+Follow-up to the entry above (commit 59cda0a, "process never settles
+into a stopped state"). Hypothesis 2 from that entry (a periodic
+signal-based stop/resume cycle on `GC Finalizer`, `Job.Worker 2`, and
+`Thread-3`) is now CONFIRMED as the root cause, not just leading.
+
+**Confirmation method:** lldb's `gdb-remote packets` wire-protocol
+logging (`log enable -f <path> gdb-remote packets`) showed repeated
+stop-reply packets for those three threads carrying
+`"reason":"signal"` with `"signal":24` (SIGXCPU) and `"signal":30`
+(SIGPWR) -- neither signal had a configured `process handle`
+disposition in MACE's existing Android setup, which only configures
+SIGSEGV/SIGBUS (see docs/android-setup.md's existing rationale: ART's
+JIT compiler's routine SIGSEGVs). Unconfigured signals default to
+notify+stop, so each occurrence on these high-frequency background
+threads produced a stop event lldb's own stop-hook correctly skipped
+(per stop_hook.py's existing `eStopReasonSignal` skip branch) but
+that nonetheless prevented the process from ever reaching the single
+coherent process-level stopped state `mace_continue`'s `SBListener`-
+based poll needs to detect a terminal state.
+
+**Fix:** added the same passthrough treatment already used for
+SIGSEGV/SIGBUS:
+
+    (lldb) process handle SIGXCPU -n false -p true -s false
+    (lldb) process handle SIGPWR -n false -p true -s false
+
+**Verification:** after applying the fix, the previously-constant
+`-- Thread 30/33/62` churn in the lldb terminal stopped appearing.
+Three independent checks confirmed the control path itself (not just
+the visible noise) is now reliable: (1) three consecutive
+`mace_get_register_context` calls returned byte-for-byte identical
+register state, confirming the process was genuinely static, not
+oscillating; (2) `lldb.target.process.GetState()` queried directly
+in the interactive session returned `5` (`eStateStopped`), matching
+what the CLI showed; (3) the actual acceptance test -- setting a
+breakpoint on `__android_log_print`, triggering it via normal
+gameplay, then calling `mace_continue` via a raw socket call -- came
+back cleanly with `"status": "stopped"`, `"stop_reason": "breakpoint"`,
+`"breakpoint_id": "2.1"`, and a fully populated register context and
+call chain. No timeout, no "not stopped" rejection. One isolated
+"not stopped" error did occur earlier, in the narrow window
+immediately after two rapid manual `process interrupt` calls --
+treated as a one-off race in that specific sequence, not a sign the
+fix is incomplete, since the actual breakpoint-detection test passed
+cleanly afterward.
+
+**Persisted:** docs/android-setup.md's connect sequence and
+explanatory text (commit 24fae50), and scripts/android_connect.sh's
+automated connect invocation (commit e6a4b3d), both now configure
+SIGXCPU/SIGPWR passthrough by default for every Android session, not
+just as a manual troubleshooting step.
+
+**Status:** CLOSED. This was a real v2-scope MACE/lldb capability
+gap, confirmed and fixed independent of the orchestrator or AI layer.
+RedRunner is unblocked for both guided and blind assessment. Next:
+resume step 5 as originally planned -- a fresh blind orchestrator
+run against RedRunner now that the control path is reliable.

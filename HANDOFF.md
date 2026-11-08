@@ -395,21 +395,34 @@ and to any LLM assistant working the project, not just one specific one.
     MACE's own MCP write-tools (mace_patch/mace_set_breakpoint/
     mace_continue were never called) -- so the "analyst-guided, no
     JSON" tier is not yet proven through MACE's own tool surface, only
-    through plain lldb with MACE's panel displaying. Planned next:
-    re-run the orchestrator on the same target, given the symbol
-    names as analyst guidance (no JSON), to prove the tool surface
-    itself end to end.
+    through plain lldb with MACE's panel displaying. Re-ran the
+    orchestrator with the symbol names as guidance later the same day
+    (2026-11-08): the reasoning was complete and correct through
+    MACE's own tools -- it independently derived the real patch point
+    (x0=1 at checkPass's final write before ret) -- but the MCP
+    channel dropped mid-sequence and the lldb session hung outright,
+    requiring kill -9 to recover. A follow-up manual attempt to finish
+    the patch via direct socket calls (bypassing the SDK) instead
+    destabilized the process a second way (real Android ANRs, from
+    interleaving native lldb commands with concurrent MCP-socket
+    calls). All three findings are documented in BACKLOG.md's
+    2026-11-08 entries, including a likely revision to the RedRunner
+    thread-churn root cause (ART's own debugger-aware brk
+    instrumentation, not Unity/thread-count-specific). The patch
+    itself was never actually applied -- the tier remains unproven
+    through MACE's own tool surface, now for an infrastructure
+    reason rather than a reasoning one.
 
 ## Immediate next work
-1. Analyst-guided, no-JSON orchestrator run against Allsafe-Android
-   challenge 13: give the orchestrator the symbol names already found
-   manually (Java_...checkPassword, checkPass, hardcoreEncryption) as
-   analyst guidance in the task prompt, and let it drive the entire
-   bypass through its own MCP write-tools (mace_set_breakpoint,
-   mace_get_register_context, mace_patch, mace_continue) rather than
-   plain lldb commands -- not yet done. This is the real validation
-   step for the "analyst-guided, no JSON" tier (see BACKLOG.md's
-   2026-11-08 entry).
+1. Finish the analyst-guided, no-JSON patch on Allsafe-Android
+   challenge 13 -- the exact plan is already known (breakpoint at
+   0x7889512a28 in checkPass, mace_patch x0=1, same ASLR slide
+   persists as long as the app isn't relaunched). Firm rule for next
+   attempt: use exactly one control channel at a time (either plain
+   lldb or MCP-socket calls, never both in the same continue/patch
+   cycle) -- see BACKLOG.md's 2026-11-08 "concurrent control"
+   entry for why. This is the real validation step for the
+   "analyst-guided, no JSON" tier.
 
 - N4TIVE ch03 and RedRunner findings JSONs: BOTH deliberately deferred
   (2026-11-03), not scheduled. RedRunner's deferral is permanent by

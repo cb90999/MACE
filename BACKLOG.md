@@ -3812,3 +3812,72 @@ sits -- rather than leaving "does MACE work on Unity games" as an
 open question defined by one unusually heavy target. Not scheduled;
 logged so the question isn't lost once Allsafe-Android's demo work
 is underway.
+
+
+## Step 5 (Allsafe-Android): fully-blind orchestration run confirmed not viable -- symbol enumeration gap is by design, not a bug (2026-11-08)
+
+Context: after manually walking Allsafe-Android's challenge 13 ("Hook
+the Native") end to end via lldb -- breakpoint chain
+Java_infosecadventures_allsafe_challenges_NativeLibrary_checkPassword
+-> checkPass -> hardcoreEncryption -> the real comparison at
+___lldb_unnamed_symbol_1ea38, register patch of w0 from 0 to 1 at
+checkPass+72, confirmed via the app's own "Wrong password, try
+harder" toast no longer appearing after the patch -- ran MACE's
+Claude Agent SDK orchestrator (src/mace/orchestrator/run.py) fully
+blind against the same target: no findings-JSON loaded, no symbol
+names or app-specific hints in the task prompt. This was v3's
+deliberately-blind step 5 case as originally scoped (see HANDOFF.md
+and BACKLOG.md's 2026-11-07 entries).
+
+Prompt used: "Investigate the Allsafe-Android app currently attached
+via MACE. Check mace_get_findings first before setting any
+breakpoints. Find the pass/fail check this app is performing and
+make it report success without being given the correct input,
+patching registers if appropriate."
+
+Result: ended in error_max_turns (21 turns) with no hit on the real
+check. mace_get_findings correctly returned empty. The orchestrator
+reasoned entirely from first principles about what a password check
+probably calls -- cycling through mace_set_breakpoint{symbol:
+strcmp}, strncmp, JNI_OnLoad, memcmp, android_dlopen_ext, dlopen --
+deleting each after a mace_continue timeout produced no useful hit,
+repeating with longer timeouts, until the turn cap was reached. No
+crash, no MCP-channel race, approval gate worked cleanly throughout
+-- the run failed safely, it just never found anything.
+
+Root cause: the real comparison logic lives in an anonymous local
+symbol (___lldb_unnamed_symbol_1ea38, a hand-rolled byte comparison),
+not any libc call. No amount of reasonable guessing from common
+function names reaches an unnamed symbol. The only tool that could
+have found it is a live module-symbol-enumeration capability (an
+SBModule-based "list every symbol in this module" tool) -- which
+MACE deliberately does not have, since that is a slice of static
+analysis MACE's architecture delegates to tools outside MACE (static
+analysis -> JSON -> MACE consumes it -> dynamic agent runs from
+there).
+
+Conclusion (CB's call, 2026-11-08): this confirms the architectural
+boundary is in the right place, not a gap to close. "Fully blind,
+zero input, zero guidance" is retired as a validation target/demo
+mode -- worth running once to get this confirmed negative, but never
+a mode MACE claims to support. The validation matrix going forward
+has two real tiers:
+  1. Static-analysis-JSON -> MACE -> autonomous dynamic agent
+     (eeacollatz/step 4, 2026-11-06) -- proven end to end, including
+     MACE's own write-tool surface (mace_patch, mace_set_breakpoint,
+     mace_continue).
+  2. Analyst-guided interactive dynamic agent, no JSON -- demonstrated
+     manually on Allsafe-Android challenge 13 (2026-11-08) via plain
+     lldb commands with MACE's observability panel displaying
+     throughout, but NOT yet through MACE's own MCP write-tools
+     (mace_patch/mace_set_breakpoint/mace_continue were never called
+     -- only native lldb `register write`/`breakpoint set`/`c`).
+     Proving this tier properly means re-running it with the
+     orchestrator driving the same bypass through its own tool
+     surface, given the symbol names as analyst guidance (no JSON) --
+     not yet done, planned as this session's next step.
+
+Step 5 is CLOSED under this reframing. Allsafe-Android's challenge 13
+stands as the starting point for the Android half of the
+"analyst-guided" demo story; no further fully-blind orchestration
+runs are planned.

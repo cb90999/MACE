@@ -3881,3 +3881,130 @@ Step 5 is CLOSED under this reframing. Allsafe-Android's challenge 13
 stands as the starting point for the Android half of the
 "analyst-guided" demo story; no further fully-blind orchestration
 runs are planned.
+
+
+## Step 5 (Allsafe-Android): analyst-guided MCP-tool run reasoned correctly to the real patch point, then the MCP channel hung mid-sequence (2026-11-08)
+
+Follow-up to the prior entry. Re-ran MACE's orchestrator against the
+same Allsafe-Android challenge 13 target, this time giving it the
+three symbol names (Java_...checkPassword, checkPass,
+hardcoreEncryption) as analyst guidance and letting it drive the
+entire investigation through its own MCP write-tools
+(mace_set_breakpoint, mace_continue, mace_step_instruction) rather
+than plain lldb commands -- the real test of the "analyst-guided, no
+JSON" tier through MACE's actual tool surface, flagged as the gap in
+the previous entry.
+
+Reasoning result: the orchestrator set all three breakpoints via
+mace_set_breakpoint, correctly reasoned past two unrelated spurious
+stops (futex/linker-thread noise), computed the return address after
+hardcoreEncryption returns in checkPass (0x78895129e8) entirely on
+its own, re-set a tighter breakpoint there, single-stepped 18
+instructions via mace_step_instruction through the real comparison
+logic, and correctly narrated the comparison call's result (x0=0)
+feeding into checkPass's boolean return path. It landed on the
+correct conclusion -- the real jboolean pass/fail result is x0 at
+0x7889512a28, the last write before the function's ret -- and
+proposed the exact right fix (breakpoint there, mace_patch x0=1).
+This is a complete, correct, independently-derived plan, reached
+entirely through MACE's own write-tool surface (not plain lldb
+commands) -- arguably a cleaner patch point than the one found
+manually earlier today (later in the function, nothing can
+overwrite it before return).
+
+Infrastructure result: partway through the 18-instruction step
+sequence, the MCP channel dropped ("Connection refused" on all
+subsequent calls) -- not an lldb crash (lldb's own terminal kept
+processing step events cleanly for several more stops afterward,
+with no error printed anywhere) but a silent death of the
+socket-listener thread inside channel.py. The orchestrator's SDK-level
+exit status was "done: success, turns=37" despite never applying the
+patch -- worth noting precisely: this status means "the agent
+produced a final coherent response," not "the task was accomplished."
+The lldb session then hung outright -- accepted Ctrl-C (confirming
+the process wasn't fully dead) but no further typed command,
+requiring `kill -9` on the lldb process itself to recover. The
+target app (pid 13232) survived the forced kill of its tracer and
+was recovered by a plain reattach, no app relaunch needed.
+
+This is the most concrete live repro yet of the already-documented
+deferred limitation: channel.py's LLDB_LOCK not serializing against
+stop_hook.py's handle_stop. Previously only a theoretical concern
+from iOS testing; now reproduced concretely on Android under real
+write-tool load. Worth reopening as a scoped investigation rather
+than staying permanently deferred.
+
+## Step 5 (Allsafe-Android): thread-churn root cause likely revised -- ART's own debugger-aware brk instrumentation, not a Unity/thread-count-specific issue (2026-11-08)
+
+On reattaching after the hang above, the same stop/resume churn
+documented for RedRunner on 2026-11-07 (repeating "-- Thread N"
+headers, no MACE panel rendering) reappeared immediately -- but on
+Allsafe-Android, whose thread count (27-40) is roughly half
+RedRunner's 76. This revises the earlier tentative conclusion that
+the symptom was tied to RedRunner's unusually high thread count.
+
+Direct evidence: a clean, fully-resolved stop captured seven
+different threads -- the main thread, two binder threads,
+android.bg, SurfaceSyncGroup, InsetsAnimation, and InteractionJank --
+all sitting at the identical instruction,
+libart.so`___lldb_unnamed_symbol_2881e0+148, a brk #0 (software
+trap). A second, independent stop landed on
+__jit_debug_register_code, a real, documented ART function whose
+entire body IS a brk #0 -- it exists specifically so native
+debuggers/profilers can intercept JIT code-registration events. Not
+a bug; ART's own intentional debugger-synchronization mechanism.
+
+Working theory (not yet fully confirmed): ART inserts debugger-aware
+brk traps at common runtime code paths whenever a native debugger is
+attached, and any app with enough JIT/runtime activity across enough
+threads generates this traffic -- RedRunner's heavy Unity/IL2CPP JIT
+load produced more of it (76 threads, high churn); Allsafe's much
+lighter workload still reproduces the identical symptom on roughly
+half the threads. Reframes the problem from "Unity/thread-count-
+specific" to "a general ART-level behavior triggered by any native
+debugger attach, scaling with JIT/runtime activity rather than raw
+thread count." Needs real confirmation (symbolicating
+___lldb_unnamed_symbol_2881e0 properly, checking AOSP source for
+brk-based debugger hooks) before superseding the 2026-11-07 RedRunner
+entry's framing, but the Allsafe repro alone is strong enough
+evidence to flag this as the leading theory now.
+
+## Step 5 (Allsafe-Android): concurrent interactive-lldb + MCP-socket control destabilized the process -- real ANR, not a MACE bug per se (2026-11-08)
+
+While manually attempting to complete the patch via direct Unix-socket
+calls to channel.py (bypassing the orchestrator and SDK entirely,
+using the exact patch point derived above: breakpoint at
+0x7889512a28, mace_patch x0=1), repeatedly interleaved `process
+interrupt` (issued interactively in the lldb terminal) with
+mace_continue (issued over the socket) in quick succession, several
+times in a row, to re-establish the stopped-state precondition
+mace_continue requires.
+
+Result: three consecutive mace_continue calls timed out with zero
+hits on a breakpoint that should fire unconditionally on every call
+to checkPass (it sits past any branch, immediately before the
+function epilogue). The real cause surfaced when asked directly: the
+app itself was genuinely unresponsive -- repeated Android ANR
+dialogs, with no "Wrong password, try harder" toast ever appearing,
+meaning the tapped Check button never actually reached the native
+call at all. The process was kept alive throughout by choosing
+"Wait" on each ANR rather than "Close."
+
+Likely a second, distinct manifestation of the same underlying
+coordination gap as the MCP-channel hang above -- two independent
+control paths (an interactive lldb command and a concurrent
+MCP-tool call) both trying to manage the same process's execution
+state without serialization, this time leaving some thread paused
+mid-instruction while holding an Android framework-level lock the UI
+thread needed, producing a real, user-visible ANR rather than a
+MACE-internal timeout. Not yet root-caused to the instruction/lock
+level; flagged as a second concrete data point for the same
+LLDB_LOCK/stop_hook investigation above, not a separate issue.
+
+CB's call (2026-11-08): stop live testing here rather than continue
+destabilizing an already-unsettled process. Pick up the completed
+patch attempt fresh next session, with a firm rule going forward:
+never issue a native lldb command (process interrupt, c, etc.) and
+an MCP-socket call in the same continue/patch cycle -- use exactly
+one control channel at a time per operation, matching the parts of
+today's runs that worked cleanly.

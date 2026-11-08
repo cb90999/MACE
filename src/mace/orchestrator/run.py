@@ -45,7 +45,7 @@ async def run(task: str) -> None:
         tools=ALL_TOOL_NAMES,
         disallowed_tools=["Bash", "Write", "Edit", "WebFetch", "WebSearch"],
         permission_mode="bypassPermissions",
-        max_turns=20,
+        max_turns=35,
         hooks={
             "PreToolUse": [
                 HookMatcher(matcher="mcp__mace__mace_patch", hooks=[gate_write_tools]),

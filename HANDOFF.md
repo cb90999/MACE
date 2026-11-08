@@ -370,16 +370,46 @@ and to any LLM assistant working the project, not just one specific one.
     issue. CB's call: demote RedRunner to backlog, replace it in the
     active demo lineup with Allsafe-Android (t0thkr1s/allsafe-android),
     selected over three other evaluated candidates (commit 9939d00).
-  - Not yet done: step 5 proper, against Allsafe-Android (building
-    and attaching not yet started).
+  - Step 5 CLOSED (2026-11-08) under a reframed conclusion, not as
+    originally scoped. Allsafe-Android was built, attached (27
+    threads, no SIGXCPU/SIGPWR or tracing-overhead issues), and
+    challenge 13 ("Hook the Native") was walked end to end manually
+    via plain lldb commands (register write/breakpoint set/c) with
+    MACE's observability panel displaying throughout: breakpoint
+    chain Java_...checkPassword -> checkPass -> hardcoreEncryption ->
+    the real comparison at ___lldb_unnamed_symbol_1ea38, register
+    patch of w0 from 0 to 1 at checkPass+72, confirmed via the app's
+    own "Wrong password, try harder" toast no longer appearing. Then
+    ran the orchestrator fully blind (no findings-JSON, no hints)
+    against the same target -- it correctly returned empty from
+    mace_get_findings, reasoned from first principles toward common
+    comparison-function names (strcmp/strncmp/memcmp/dlopen/
+    JNI_OnLoad), and ended in error_max_turns with no hit, because
+    the real check is an anonymous local symbol no amount of
+    name-guessing can reach. CB's call: this confirms the
+    architectural boundary (static analysis -> JSON -> MACE's dynamic
+    agent) is correctly drawn, not a gap -- "fully blind, zero input"
+    is retired as a validation target/demo mode. See BACKLOG.md's
+    2026-11-08 entry for full detail. One open item the manual
+    walkthrough surfaced: it used plain lldb commands throughout, not
+    MACE's own MCP write-tools (mace_patch/mace_set_breakpoint/
+    mace_continue were never called) -- so the "analyst-guided, no
+    JSON" tier is not yet proven through MACE's own tool surface, only
+    through plain lldb with MACE's panel displaying. Planned next:
+    re-run the orchestrator on the same target, given the symbol
+    names as analyst guidance (no JSON), to prove the tool surface
+    itself end to end.
 
 ## Immediate next work
-1. Step 5: Allsafe-Android as v3's first genuinely blind orchestration
-   test case (deliberately no pre-built findings-JSON -- see Active
-   milestone above and BACKLOG.md's 2026-11-07 target-selection entry
-   for why RedRunner was replaced). Not yet started: clone/build the
-   app, confirm thread count empirically before committing further,
-   scope which specific challenge(s) to target.
+1. Analyst-guided, no-JSON orchestrator run against Allsafe-Android
+   challenge 13: give the orchestrator the symbol names already found
+   manually (Java_...checkPassword, checkPass, hardcoreEncryption) as
+   analyst guidance in the task prompt, and let it drive the entire
+   bypass through its own MCP write-tools (mace_set_breakpoint,
+   mace_get_register_context, mace_patch, mace_continue) rather than
+   plain lldb commands -- not yet done. This is the real validation
+   step for the "analyst-guided, no JSON" tier (see BACKLOG.md's
+   2026-11-08 entry).
 
 - N4TIVE ch03 and RedRunner findings JSONs: BOTH deliberately deferred
   (2026-11-03), not scheduled. RedRunner's deferral is permanent by

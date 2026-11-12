@@ -139,6 +139,44 @@ class ContextSnapshot:
             return raw.rstrip(b'\x00').decode('ascii', errors='replace')
         return None
 
+    def swift_small_string(self) -> Optional[str]:
+        """
+        Best-effort decode of a Swift small string packed into x0:x1,
+        per Swift's ABI-stable _StringObject/_SmallString layout
+        (16 bytes total: x0 = low word, x1 = high word). Small strings
+        (<=15 UTF-8 bytes) are packed inline with no heap allocation;
+        the discriminator lives in the top byte of the high word (x1):
+        bit 63 set, bit 61 set, bit 60 clear marks "small", and the low
+        nibble of that same byte is the byte count (0-15). Content is
+        byte 0-7 of x0 (little-endian) followed by byte 0-6 of x1.
+
+        Scope/caveat: this only decodes correctly when the String is
+        actually in x0:x1 -- true when it's the sole/first non-self
+        argument at a Swift function's entry, not guaranteed at an
+        arbitrary stop. Pure bit math only -- no process calls, unlike
+        the ObjC receiver/selector resolution (_annotate_objc_call),
+        which does call into the live process. Returns None when the
+        bit pattern doesn't validate as a small string, rather than
+        guessing.
+
+        Source: Swift's StringObject.swift / SmallString.swift
+        (swift.org, Apache License v2.0 w/ Runtime Library Exception).
+        """
+        x0 = self.x[0]
+        x1 = self.x[1]
+        discriminator = (x1 >> 56) & 0xFF
+        if discriminator & 0xB0 != 0xA0:
+            return None  # not small -- needs bits 63+61 set, 60 clear
+        count = discriminator & 0x0F
+        if count > 15:
+            return None  # shouldn't happen (4-bit field), but don't trust blindly
+        raw = x0.to_bytes(8, byteorder='little') + x1.to_bytes(8, byteorder='little')[:7]
+        content = raw[:count]
+        try:
+            return content.decode('utf-8')
+        except UnicodeDecodeError:
+            return None  # malformed -- don't show mangled output
+
     def w_as_hex(self, n: int) -> str:
         """Return wN (32-bit) as zero-padded 8-char hex string."""
         return f"0x{self.w(n):08x}"

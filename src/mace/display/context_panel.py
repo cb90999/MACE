@@ -175,6 +175,10 @@ def render_panel(snap: ContextSnapshot,
     if snap.swift_location:
         parts.append(_separator("swift"))
         parts.append(f"  {Color.CYAN}[{snap.swift_location}]{Color.RESET}")
+    swift_str = snap.swift_small_string()
+    if swift_str is not None:
+        parts.append(_separator("swift string"))
+        parts.append(f"  {Color.CYAN}'{swift_str}'{Color.RESET}  (x0:x1, small-string ABI)")
     if snap.jni_location:
         parts.append(_separator("jni"))
         parts.append(f"  {Color.CYAN}[{snap.jni_location}]{Color.RESET}")

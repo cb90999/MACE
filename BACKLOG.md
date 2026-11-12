@@ -4008,3 +4008,68 @@ never issue a native lldb command (process interrupt, c, etc.) and
 an MCP-socket call in the same continue/patch cycle -- use exactly
 one control channel at a time per operation, matching the parts of
 today's runs that worked cleanly.
+
+## Scope decisions (2026-11-09 through 2026-11-12)
+
+- ART brk-trap root-cause investigation (symbolicating
+  ___lldb_unnamed_symbol_2881e0, AOSP source check, RedRunner re-test)
+  deferred to post-GA. Demo lineup for the prototype finalized as
+  eeacollatz (iOS) + N4TIVE + Allsafe (both Android). Next focus after
+  Allsafe is UI improvements, not further ART investigation.
+- iOS RedRunner build/blind-run considered and declined (2026-11-09) --
+  the specific ART debugger-aware brk mechanism cannot exist on iOS
+  (no ART; Unity ships via IL2CPP AOT, no JIT allowed on iOS), so it
+  would not validate the ART theory, only serve as an unrelated
+  negative control. Not worth the build effort right now.
+
+## UI improvement backlog additions (2026-11-09)
+
+- Swift/ObjC register decoding for the stop-context panel (iOS): at a
+  breakpoint, decode x0/x1 per Swift's small-string ABI (<=15 bytes
+  packed inline, bit-layout per StringStorage) and per ObjC calling
+  convention (x0=self, x1=selector -- resolve class name + selector
+  text instead of raw pointers). Runtime Swift demangling
+  (swift_demangle in libswiftCore.dylib) is reachable via LLDB `expr`
+  calling into the target process, same mechanism Frida uses via
+  NativeFunction. Source: 8kSec "Advanced Frida Usage Part 2"
+  (Signal/Telegram iOS,
+  https://www.8ksec.io/advanced-frida-usage-part-2-analyzing-signal-and-telegram-messages-on-ios/),
+  2026-11-09. Extends the existing ASCII-decode register item to a
+  Swift/ObjC-aware decode on iOS; no Android equivalent needed (JNI has
+  its own convention).
+
+## Future capability idea, flagged not pursued (2026-11-11)
+
+- mace_expression / mace_call -- a tool wrapping LLDB's expr/call to
+  invoke arbitrary functions in the live target (Frida-NativeFunction-
+  style), e.g. to call the app's own methods directly. Real capability
+  gap vs. Frida, but: (1) LLDB's call/expr machinery resumes and steps
+  the inferior internally, which is the same control-channel risk
+  family as the MCP-channel hang and ANR already found on
+  Allsafe-Android (2026-11-08) -- adding it before the LLDB_LOCK/
+  stop_hook race is fixed risks a third variant of the same bug class;
+  (2) belongs behind the WRITE_TOOLS approval gate like mace_patch, not
+  beside it. Bucketed as a post-GA feature idea, not a GA blocker, and
+  not needed for the Swift/ObjC register-decode item above (that's
+  achievable via pure memory reads + host-side demangling, no live
+  function-call tool required).
+
+## New demo candidate: RecoveryDemo health-metrics app (2026-11-11/12)
+
+- Building a new iOS demo app (Swift/SwiftUI, Polar H10 BLE chest
+  strap, HealthKit, CryptoKit) as a candidate 4th MACE demo and
+  eventual full prototype test case -- net new app, not a tweak of an
+  existing one. Three MACE targets: BLE-AUTH (peripheral identity
+  pinning -- corrected from an initial HMAC-handshake idea, since the
+  real H10 has no proprietary characteristic to do that math),
+  CRYPTO (AES-GCM + HMAC integrity signature, CryptoKit, Keychain
+  biometry-gated key), ANTI-TAMPER (ptrace/sysctl/jailbreak checks,
+  triggered from a user action rather than at launch to avoid a
+  PT_DENY_ATTACH timing race, with an enforcement toggle + per-check
+  selector for deterministic rehearsal). Networking/remote-backend
+  explicitly out of scope. Prompt and initial Swift source scaffolded
+  outside the MACE repo (separate Xcode project, xcodegen-based).
+  Demo deadline pushed to the 3rd week of December to accommodate this.
+  Sequencing: finish the Allsafe single-channel patch and the UI
+  improvement pass above FIRST -- RecoveryDemo build starts after both,
+  not in parallel.

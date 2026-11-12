@@ -414,15 +414,21 @@ and to any LLM assistant working the project, not just one specific one.
     reason rather than a reasoning one.
 
 ## Immediate next work
-1. Finish the analyst-guided, no-JSON patch on Allsafe-Android
-   challenge 13 -- the exact plan is already known (breakpoint at
-   0x7889512a28 in checkPass, mace_patch x0=1, same ASLR slide
-   persists as long as the app isn't relaunched). Firm rule for next
-   attempt: use exactly one control channel at a time (either plain
-   lldb or MCP-socket calls, never both in the same continue/patch
-   cycle) -- see BACKLOG.md's 2026-11-08 "concurrent control"
-   entry for why. This is the real validation step for the
-   "analyst-guided, no JSON" tier.
+1. ~~Finish the analyst-guided, no-JSON patch on Allsafe-Android
+   challenge 13~~ -- DONE (2026-11-12, BACKLOG.md). Completed through
+   MACE's own MCP tool surface (mace_set_breakpoint/mace_patch/
+   mace_continue), not just plain lldb -- this is the real "analyst-
+   guided, no-JSON" tier validation, now proven end-to-end. Also fixed
+   a real bug along the way: MACEStopHook.handle_stop was auto-
+   continuing past Android's attach-time SIGSTOP flood (commit
+   7ad117a).
+
+   Next: UI improvements -- register-panel ASCII decode, and the
+   Swift/ObjC register decoding for the stop-context panel (iOS,
+   logged 2026-11-09). Bounded/timeboxed pass, per 2026-11-09's scope
+   decision -- RecoveryDemo (the health-metrics app, candidate 4th
+   demo / full prototype test case, see BACKLOG.md 2026-11-11/12)
+   comes after this and the UI pass, not in parallel.
 
 - N4TIVE ch03 and RedRunner findings JSONs: BOTH deliberately deferred
   (2026-11-03), not scheduled. RedRunner's deferral is permanent by

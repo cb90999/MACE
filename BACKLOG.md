@@ -4073,3 +4073,55 @@ today's runs that worked cleanly.
   Sequencing: finish the Allsafe single-channel patch and the UI
   improvement pass above FIRST -- RecoveryDemo build starts after both,
   not in parallel.
+
+## Step 5 (Allsafe-Android): mace_continue's attach-time auto-continue bug found and fixed; the analyst-guided, no-JSON tier proven end-to-end through MACE's own MCP tools (2026-11-12)
+
+Picking up HANDOFF.md's "Immediate next work" item -- finishing the
+single-channel patch on challenge 13, this time specifically through
+MACE's own mace_set_breakpoint/mace_patch/mace_continue, not plain
+lldb -- surfaced and fixed a real bug along the way, then completed
+the validation it was blocking.
+
+Root cause: MACEStopHook.handle_stop (stop_hook.py) returned False
+for any signal-reason stop to filter iOS dyld-entry noise. Per LLDB's
+stop-hook contract, if every hook returns False for a stop, LLDB
+auto-continues the process. Android's remote-android attach generates
+exactly this kind of signal stop across many threads (confirmed via a
+`thread list` dump showing a dozen-plus threads simultaneously
+reporting `stop reason = signal SIGSTOP`), so the very first
+stop-hook evaluation after mace_on/mace_mcp_on were enabled against an
+already-attached, fully-stopped process silently resumed the whole
+process before the operator or an MCP caller had done anything --
+surfacing as mace_continue's "process is not stopped" immediately
+followed by native `c` independently confirming "already running",
+with no apparent cause at the time.
+
+Fix (commit 7ad117a): never skip the first stop MACE observes after
+mace_on is (re-)enabled, regardless of reason; skip signal stops only
+from the second stop onward. Preserves the original noise-filtering
+for steady-state operation, fixes the attach-time symptom.
+
+Confirmed live after the fix: reattached fresh (pid 9003), set a
+breakpoint via mace_set_breakpoint (socket), resumed via mace_continue
+(socket) -- which this time actually worked, no precondition error --
+patched w0 0x0 -> 0x1 via mace_patch (socket), confirmed via read-back
+in the same response, then mace_continue again to let it finish. Got
+the app's own success toast. The whole sequence (minus one incidental
+slip, below) ran through MACE's own 9-tool MCP surface -- this is the
+"analyst-guided, no-JSON" validation tier actually proven end-to-end
+now, not just reasoned-through (as the 2026-11-08 orchestrator run
+did) or executed via plain lldb only (as the manual walkthrough did).
+
+One incidental finding, not yet explained: mid-cycle, the operator
+typed a native `c` in response to an ANR (reflexive, same trigger as
+last week's incident) immediately before/around a mace_continue call.
+Last week this combination destabilized the process into a real ANR
+loop; this time it didn't -- the process settled cleanly at the
+intended breakpoint a few stops later (passing through a `fork`/
+`Signal Catcher` stop and a `SIGCHLD` thread restart along the way,
+visible in the transcript) with no lasting damage. Unclear whether
+the stop-hook fix incidentally hardened this path too, or whether this
+was simply luck. Not re-tested deliberately -- the single-channel
+rule from 2026-11-08 still stands; this wasn't a sanctioned retry of
+mixing channels, just an observation worth a flag for anyone who hits
+it again.

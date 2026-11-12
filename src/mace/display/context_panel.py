@@ -35,8 +35,19 @@ def _separator(label: str) -> str:
     return f"{Color.CYAN}{label_str}{'─' * max(remaining, 4)}{Color.RESET}"
 
 
-def _format_register_line(name, hex_val, decimal, ascii_val, w_val, highlight=False, signed_val=None, region_label=None):
-    color = Color.YELLOW if highlight else Color.RESET
+def _format_register_line(name, hex_val, decimal, ascii_val, w_val, highlight=False, signed_val=None, region_label=None, changed=False):
+    # Watch (explicit researcher interest) always wins over changed --
+    # a register someone is specifically watching stays YELLOW even if
+    # it also happens to have changed this stop. "Changed since last
+    # stop" gets its own color (GREEN) rather than a dimmed/intensity
+    # variant -- see the note on Color above: dim/bright-black isn't a
+    # reliable signal across terminal themes, a second hue is.
+    if highlight:
+        color = Color.YELLOW
+    elif changed:
+        color = Color.GREEN
+    else:
+        color = Color.RESET
     # When a region label resolved (address-shaped value, e.g. a heap or
     # stack pointer), show that instead of the raw decimal -- a 19-digit
     # unsigned number tells a researcher nothing hex doesn't already show
@@ -62,7 +73,8 @@ _REGISTER_GROUPS = [
 
 
 def render_registers(snap: ContextSnapshot,
-                     watch: Optional[list] = None) -> str:
+                     watch: Optional[list] = None,
+                     previous: Optional[ContextSnapshot] = None) -> str:
     watch = watch or []
     lines = [_separator("registers")]
 
@@ -73,6 +85,13 @@ def render_registers(snap: ContextSnapshot,
             decimal  = snap.as_decimal(j)
             ascii_v  = snap.as_ascii(j)
             highlight = j in watch
+            # Scoped to x0-x28 (general-purpose), same as watch above --
+            # not fp/lr/sp/pc, which the per-register loop never touches
+            # (they're appended separately below with fixed formatting).
+            # pc is deliberately excluded there too -- it changes at
+            # literally every stop, so flagging it as "changed" would
+            # be constant noise, not signal.
+            changed = previous is not None and snap.x[j] != previous.x[j]
             w_val = snap.w_as_hex(j) if (snap.x[j] >> 32 == 0 and snap.x[j] != 0) else None
             # Only show the signed reinterpretation when the top bit is
             # actually set (i.e. it would otherwise render as a confusing
@@ -80,7 +99,7 @@ def render_registers(snap: ContextSnapshot,
             # always-address fp/lr/sp/pc registers below.
             signed_val = snap.as_signed(j) if snap.x[j] >= (1 << 63) else None
             region_label = snap.region_labels[j]
-            lines.append(_format_register_line(f"x{j}", hex_val, decimal, ascii_v, w_val, highlight, signed_val, region_label))
+            lines.append(_format_register_line(f"x{j}", hex_val, decimal, ascii_v, w_val, highlight, signed_val, region_label, changed))
     lines.append("")
     lines.append(f"  {'fp':<6}  0x{snap.fp:016x}  # {snap.fp}u")
     lines.append(f"  {'lr':<6}  0x{snap.lr:016x}  # {snap.lr}u")
@@ -153,11 +172,12 @@ def render_match_status(snap: ContextSnapshot, a: int, b: int) -> str:
 
 def render_panel(snap: ContextSnapshot,
                  watch: Optional[list] = None,
-                 compare: Optional[tuple] = None) -> str:
+                 compare: Optional[tuple] = None,
+                 previous: Optional[ContextSnapshot] = None) -> str:
     width = _terminal_width()
     parts = [
         render_stop_banner(snap),
-        render_registers(snap, watch=watch),
+        render_registers(snap, watch=watch, previous=previous),
     ]
     if snap.finding_kind or snap.finding_note:
         parts.append(_separator("finding"))

@@ -91,8 +91,13 @@ class MACEStopHook:
         with _handle_stop_lock:
             _iteration += 1
             snap  = snapshot_from_frame(frame, iteration=_iteration)
+            # Previous stop's snapshot, if any -- read BEFORE appending
+            # the current one, so this is genuinely "last stop" and
+            # never the snapshot we just took. None on the very first
+            # stop (nothing to diff against yet).
+            previous = _snapshot_history[-1] if _snapshot_history else None
             _snapshot_history.append(snap)
-            panel = render_panel(snap, watch=WATCH_REGS, compare=COMPARE)
+            panel = render_panel(snap, watch=WATCH_REGS, compare=COMPARE, previous=previous)
             stream.Print(panel + "\n")
         return True
 

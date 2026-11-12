@@ -67,8 +67,20 @@ class MACEStopHook:
 
         thread = exe_ctx.GetThread()
 
-        # Skip signal stops (dyld entry, etc.)
-        if thread.GetStopReason() == lldb.eStopReasonSignal:
+        # Skip signal stops (dyld entry, Android's per-thread SIGSTOP
+        # housekeeping noise, etc.) -- EXCEPT the very first stop MACE
+        # observes after mace_on is (re-)enabled (_iteration == 0,
+        # checked before the increment below). Found 2026-11-12: if
+        # mace_on/mace_mcp_on are enabled against a process that's
+        # already stopped (e.g. right after `process attach`, before
+        # any breakpoint/continue cycle), this skip's "return False"
+        # told LLDB's stop-hook contract to auto-continue the WHOLE
+        # process out of that attach-stop state, before the operator
+        # or an MCP caller ever got a chance to act on it --
+        # mace_continue and even native `c` would then fail with
+        # "process is not stopped" / "already running" with no
+        # apparent cause. See BACKLOG.md's 2026-11-12 entry.
+        if thread.GetStopReason() == lldb.eStopReasonSignal and _iteration > 0:
             return False
 
         frame = thread.GetFrameAtIndex(0)

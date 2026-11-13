@@ -3541,6 +3541,56 @@ existing post-v3/pre-demo UI-improvements list (see the "Pre-v3 UI
 cleanup" precedent in HANDOFF.md for the kind of batch this belongs
 in) rather than touching stop_hook.py now.
 
+UPDATE 2026-11-13: partially implemented, with a real architectural
+finding that changes this item's scope. Investigated live on Enigma
+(iPad, palera1n). Key finding: "Process N stopped" and the trailing
+"Target N: (...) stopped." lines are NOT suppressible from any
+Python-level code in MACE -- confirmed by calling
+SBThread.StepInstruction() directly via the raw API (bypassing the
+si/c command objects entirely) and seeing the banner print anyway.
+This is the interactive lldb CLI's own async event-handler thread,
+which prints a stop notification on any transition to the stopped
+state, independent of what triggered it (si, c, mace_patch, or raw
+API calls). Rules out a custom mace_step/mace_continue command as a
+suppression mechanism -- there isn't one available from inside the
+process.
+
+Settings are the only real lever, with a gotcha found along the way:
+frame-format's default template carries its own embedded trailing
+newline as part of the format string -- setting it to "" strips that
+newline too, and whatever lldb prints next (the "Target N: ..." line)
+squishes onto the same line with no separator. Setting it to "\n"
+instead (keep the newline, drop the content) avoids the squish while
+still dropping the frame-info line. thread-stop-format has the same
+newline-embedded-in-template property but custom %-style tokens
+(%t/%z) are NOT valid lldb format tokens (lldb uses ${thread.index}-
+style tokens) -- left at its default rather than chasing the correct
+token syntax, since the full default line is short enough to tolerate.
+stop-disassembly-count 0 cleanly removes the disassembly listing
+entirely, no artifacts.
+
+Implemented (commit 3c89b3c): mace_on now auto-applies frame-format
+"\n" and stop-disassembly-count 0. Achievable floor, live-confirmed
+on Enigma via a fresh attach with zero manual settings commands:
+
+  Process N stopped
+  * thread #1, queue = 'com.apple.main-thread', stop reason = ...
+
+  Target 0: (Enigma) stopped.
+
+(blank line where the frame-info line used to be, no disassembly).
+Down from the original ~9+ line dump to 4 lines, no squish/garbling.
+
+NOT done, still open: the actual MACE-native "stop context"
+replacement block this item originally proposed (STOPPED/thread/
+func+offset/a few disasm lines, MACE-styled, via the SB API) -- CB's
+explicit call (2026-11-13): ship the settings-only mitigation now,
+defer the richer replacement block to a future session rather than
+build it today. "Process N stopped"/the default thread-stop-format
+line/"Target N: (...) stopped." remain as an unavoidable floor below
+MACE's own panel -- accepted, not a bug, given the architectural
+finding above.
+
 ## Deferred: decoded ASCII/flag content should be primary, not a buried comment (friend feedback, captured late)
 
 Friend feedback on the register panel, surfaced in conversation but

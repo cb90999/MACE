@@ -423,12 +423,25 @@ and to any LLM assistant working the project, not just one specific one.
    continuing past Android's attach-time SIGSTOP flood (commit
    7ad117a).
 
-   Next: UI improvements -- register-panel ASCII decode, and the
+   UI improvements pass (bounded/timeboxed, per 2026-11-09's scope
+   decision): DONE for three of the four items picked up --
    Swift/ObjC register decoding for the stop-context panel (iOS,
-   logged 2026-11-09). Bounded/timeboxed pass, per 2026-11-09's scope
-   decision -- RecoveryDemo (the health-metrics app, candidate 4th
-   demo / full prototype test case, see BACKLOG.md 2026-11-11/12)
-   comes after this and the UI pass, not in parallel.
+   logged 2026-11-09; ObjC half was pre-existing, Swift small-string
+   half is new, commit 1023e28), changed-register highlighting
+   (Context Panel v2 item 2, logged Aug 2026, commits 4533318/4ffb428),
+   and logging a friend's late-captured ASCII/flag-priority feedback
+   (BACKLOG.md, commit 9c469a0). All live-validated on Enigma (iPad,
+   palera1n) on 2026-11-13 -- see BACKLOG.md's close-out notes
+   (commit b029ac3) for validation detail. RecoveryDemo build also
+   got a first compile/test pass ahead of schedule on 2026-11-12
+   (Polar H10 not arriving until the weekend) -- CRYPTO and
+   ANTI-TAMPER both validated via a DEBUG-only synthetic RR-data
+   injector; BLE-AUTH still needs the real peripheral.
+
+   Next: the fourth UI-pass item -- condensing raw lldb stop output
+   into a MACE-native "stop context" block (friend feedback,
+   BACKLOG.md 2026-11-06 entry) -- then RecoveryDemo's remaining
+   BLE-AUTH validation once the H10 arrives (this weekend).
 
 - N4TIVE ch03 and RedRunner findings JSONs: BOTH deliberately deferred
   (2026-11-03), not scheduled. RedRunner's deferral is permanent by

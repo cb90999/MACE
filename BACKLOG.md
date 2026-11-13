@@ -160,6 +160,22 @@ Target: Panel must be genuinely useful standalone before AI layer lands.
    Unchanged registers -> dimmed
    Implementation: ContextSnapshot diff between iterations
 
+   UPDATE 2026-11-13: implemented. _format_register_line
+   (context_panel.py) colors the full register line (name, hex,
+   decimal/signed/w=/ascii) -- not dimmed for unchanged (Color
+   deliberately excludes intensity-based styles, same reasoning as
+   elsewhere in this file -- GREEN for changed instead, YELLOW for
+   watched, watched wins when both). render_registers diffs against
+   the immediately-prior ContextSnapshot, reusing stop_hook.py's
+   existing _snapshot_history rather than adding new session state;
+   None on the first stop after mace_on. Live-validated on Enigma
+   (iPad, palera1n): first stop shows no highlighting, a step with no
+   register side effect (cbz) produces none, and a step that writes a
+   register (mov w28, #0x7) correctly highlights only that register.
+   Commits 4533318, 4ffb428 (the second extends coloring from the
+   register name only to the full line, per live feedback that
+   name-only coloring looked inconsistent).
+
 3. Memory region labeling
    Append [heap], [stack], [binary.__TEXT], [dylib] to pointer values
    x0 = 0x302cf3a50 [heap]
@@ -4055,6 +4071,25 @@ today's runs that worked cleanly.
   2026-11-09. Extends the existing ASCII-decode register item to a
   Swift/ObjC-aware decode on iOS; no Android equivalent needed (JNI has
   its own convention).
+
+  UPDATE 2026-11-13: implemented and live-validated. ASCII-decode and
+  ObjC resolution (_annotate_objc_call/_is_objc_msgsend_call_site,
+  lldb_session.py) turned out to already be in place before this item
+  was logged -- pre-existing, not new work. Swift small-string decode
+  (ContextSnapshot.swift_small_string(), context_snapshot.py;
+  displayed via context_panel.py's render_panel) was the actual new
+  work, committed 1023e28. Live-validated on Enigma (iPad, palera1n)
+  via a crafted positive control -- mace_patch x0/x1 to the exact bit
+  pattern for a 2-byte small string ("hi") per the documented ABI,
+  then stepped; panel correctly showed `'hi' (x0:x1, small-string
+  ABI)` under the new "swift string" section, agreeing with the
+  independent as_ascii() decode of x0. No naturally-occurring short
+  (<=15 byte) Swift String call site was on hand to test against
+  organically -- the one known candidate, EnigmaChecker.check(input:),
+  takes a 32-byte flag, correctly outside small-string scope (a valid
+  negative case, not a positive one). The crafted-bit-pattern test is
+  a deliberate stand-in, not a substitute for eventually confirming
+  against a real call site if one turns up.
 
 ## Future capability idea, flagged not pursued (2026-11-11)
 

@@ -3525,6 +3525,24 @@ existing post-v3/pre-demo UI-improvements list (see the "Pre-v3 UI
 cleanup" precedent in HANDOFF.md for the kind of batch this belongs
 in) rather than touching stop_hook.py now.
 
+## Deferred: decoded ASCII/flag content should be primary, not a buried comment (friend feedback, captured late)
+
+Friend feedback on the register panel, surfaced in conversation but
+never written down at the time -- captured here now rather than lost
+further. Observation: when a register's raw bytes decode as printable
+ASCII (as_ascii() in context_snapshot.py), the panel currently shows
+the raw hex/decimal value first and tucks the decoded string into a
+trailing comment -- e.g. x6/x7 rendering as
+"0x3433323174736574  # ... 'test1234'". For MACE's core EEA/CTF use
+case, the decoded string (often literally the flag) IS the meaningful
+content a researcher is scanning for -- the hex is secondary context,
+not the headline. Proposed fix direction: when as_ascii() resolves,
+lead with the decoded string and demote the raw hex/decimal to
+secondary position (exact display ordering TBD -- not yet designed in
+detail). Same underlying theme as the "condense raw lldb stop output"
+item above: surface meaningful content first, not raw register/lldb
+output. Bucket together when picking up either.
+
 ## Step 5 (RedRunner, blind run): process never settles into a stopped state MACE can act on -- real v2-scope gap, root cause not yet found (2026-11-07)
 
 Source: step 5's first blind-orchestration attempt on RedRunner (BayatGames,

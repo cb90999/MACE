@@ -424,24 +424,40 @@ and to any LLM assistant working the project, not just one specific one.
    7ad117a).
 
    UI improvements pass (bounded/timeboxed, per 2026-11-09's scope
-   decision): DONE for three of the four items picked up --
-   Swift/ObjC register decoding for the stop-context panel (iOS,
-   logged 2026-11-09; ObjC half was pre-existing, Swift small-string
-   half is new, commit 1023e28), changed-register highlighting
-   (Context Panel v2 item 2, logged Aug 2026, commits 4533318/4ffb428),
-   and logging a friend's late-captured ASCII/flag-priority feedback
-   (BACKLOG.md, commit 9c469a0). All live-validated on Enigma (iPad,
-   palera1n) on 2026-11-13 -- see BACKLOG.md's close-out notes
-   (commit b029ac3) for validation detail. RecoveryDemo build also
-   got a first compile/test pass ahead of schedule on 2026-11-12
-   (Polar H10 not arriving until the weekend) -- CRYPTO and
-   ANTI-TAMPER both validated via a DEBUG-only synthetic RR-data
-   injector; BLE-AUTH still needs the real peripheral.
+   decision): all four items picked up now addressed, three fully
+   closed and one partially. Fully done -- Swift/ObjC register
+   decoding for the stop-context panel (iOS, logged 2026-11-09; ObjC
+   half was pre-existing, Swift small-string half is new, commit
+   1023e28), changed-register highlighting (Context Panel v2 item 2,
+   logged Aug 2026, commits 4533318/4ffb428), and logging a friend's
+   late-captured ASCII/flag-priority feedback (BACKLOG.md, commit
+   9c469a0). All live-validated on Enigma (iPad, palera1n) on
+   2026-11-13 -- see BACKLOG.md's close-out notes (commit b029ac3) for
+   validation detail.
 
-   Next: the fourth UI-pass item -- condensing raw lldb stop output
-   into a MACE-native "stop context" block (friend feedback,
-   BACKLOG.md 2026-11-06 entry) -- then RecoveryDemo's remaining
-   BLE-AUTH validation once the H10 arrives (this weekend).
+   Partially done -- condensing raw lldb stop output into a MACE-
+   native "stop context" block (friend feedback, BACKLOG.md 2026-11-06
+   entry): investigation found "Process N stopped"/"Target N: (...)
+   stopped." are architecturally unsuppressible from any Python-level
+   MACE code (confirmed via direct SBThread.StepInstruction() API
+   testing -- it's the interactive lldb CLI's own async event-handler
+   thread, not something a stop-hook controls). Settings-only
+   mitigation shipped (commit 3c89b3c, frame-format "\n" +
+   stop-disassembly-count 0, auto-applied by mace_on) -- cuts the raw
+   dump from ~9+ lines to 4, no disassembly duplication. The richer
+   MACE-native replacement block (STOPPED/thread/func+offset/a few
+   disasm lines, MACE-styled) CB's friend originally proposed is still
+   open -- deferred per CB's explicit call (2026-11-13), not built
+   this session. See BACKLOG.md's 2026-11-13 update for full detail.
+
+   RecoveryDemo build also got a first compile/test pass ahead of
+   schedule on 2026-11-12 (Polar H10 not arriving until the weekend)
+   -- CRYPTO and ANTI-TAMPER both validated via a DEBUG-only synthetic
+   RR-data injector; BLE-AUTH still needs the real peripheral.
+
+   Next: the MACE-native "stop context" replacement block (if picked
+   back up), then RecoveryDemo's remaining BLE-AUTH validation once
+   the H10 arrives (this weekend).
 
 - N4TIVE ch03 and RedRunner findings JSONs: BOTH deliberately deferred
   (2026-11-03), not scheduled. RedRunner's deferral is permanent by

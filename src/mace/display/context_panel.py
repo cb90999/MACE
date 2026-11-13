@@ -53,16 +53,16 @@ def _format_register_line(name, hex_val, decimal, ascii_val, w_val, highlight=Fa
     # unsigned number tells a researcher nothing hex doesn't already show
     # better; "[heap]" or "[Enigma.__TEXT]" is the actually useful signal.
     if region_label:
-        line = f"  {color}{name:<6}{Color.RESET}  {hex_val}  # [{region_label}]"
+        line = f"  {color}{name:<6}  {hex_val}  # [{region_label}]"
     else:
-        line = f"  {color}{name:<6}{Color.RESET}  {hex_val}  # {decimal}u"
+        line = f"  {color}{name:<6}  {hex_val}  # {decimal}u"
     if signed_val is not None:
         line += f" ({signed_val}i)"
     if w_val is not None:
         line += f"  w={w_val}"
     if ascii_val:
         line += f"  '{ascii_val}'"
-    return line
+    return line + Color.RESET
 
 
 _REGISTER_GROUPS = [

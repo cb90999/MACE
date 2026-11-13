@@ -106,6 +106,19 @@ def mace_on(debugger, command, result, internal_dict):
     """Enable MACE context panel on every stop."""
     global _hook_id, _iteration
     _iteration = 0
+    # Trim lldb's own native stop output to the minimum achievable via
+    # settings. The rest -- "Process N stopped" and the trailing
+    # "Target N: (...) stopped." lines -- comes from the interactive
+    # lldb CLI's own async event-handler thread, confirmed via direct
+    # SBThread.StepInstruction() API testing (BACKLOG.md 2026-11-13)
+    # to print independent of what triggered the stop (si, c, or raw
+    # API) -- not suppressible from here, so not attempted.
+    # frame-format must keep ITS OWN embedded newline (hence "\n", not
+    # "") -- emptying it outright strips that trailing newline too,
+    # and whatever lldb prints next (the "Target N: ..." line) ends up
+    # squished onto the same line with no separator.
+    debugger.HandleCommand('settings set frame-format "\\n"')
+    debugger.HandleCommand("settings set stop-disassembly-count 0")
     debugger.HandleCommand("target stop-hook add -P stop_hook.MACEStopHook")
     print(f"[MACE] Context panel enabled. {', '.join(f'x{r}' for r in WATCH_REGS)} watched.")
 

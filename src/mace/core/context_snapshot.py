@@ -155,11 +155,25 @@ class ContextSnapshot:
         """
         Return printable ASCII interpretation of xN if all bytes are printable.
         Useful for spotting flag characters in registers — core EEA use case.
+
+        Treats the bytes as a null-terminated C string -- stops at the
+        FIRST NUL rather than only stripping trailing ones. Found
+        2026-11-14 (Android/Allsafe, Pixel 10a): the old rstrip-only
+        logic let a leading/embedded NUL through into the decoded
+        string (e.g. 0x00000000484e0000 decoded as "\x00\x00NH"), and
+        that literal NUL byte reaching the terminal corrupted line
+        rendering on at least one remote connection. A value that
+        starts with a NUL isn't a printable string at all under this
+        interpretation -- correctly returns None instead.
         """
         raw = self.x[n].to_bytes(8, byteorder='little')
-        printable = all(0x20 <= b < 0x7F or b == 0 for b in raw)
+        terminator = raw.find(b'\x00')
+        content = raw if terminator == -1 else raw[:terminator]
+        if not content:
+            return None
+        printable = all(0x20 <= b < 0x7F for b in content)
         if printable:
-            return raw.rstrip(b'\x00').decode('ascii', errors='replace')
+            return content.decode('ascii', errors='replace')
         return None
 
     def swift_small_string(self) -> Optional[str]:

@@ -98,7 +98,16 @@ class MACEStopHook:
             previous = _snapshot_history[-1] if _snapshot_history else None
             _snapshot_history.append(snap)
             panel = render_panel(snap, watch=WATCH_REGS, compare=COMPARE, previous=previous)
-            stream.Print(panel + "\n")
+            # Printed one line at a time rather than as one large Print()
+            # call -- found 2026-11-14 that a single multi-KB Print() can
+            # get silently truncated partway through on at least one
+            # remote Android connection (debugserver-over-TCP), with no
+            # exception raised and no truncation on the iOS connection.
+            # Root cause not confirmed (suspected packet/buffer limit in
+            # that transport) -- this sidesteps it without depending on
+            # understanding it. See BACKLOG.md 2026-11-14.
+            for line in (panel + "\n").split("\n"):
+                stream.Print(line + "\n")
         return True
 
 

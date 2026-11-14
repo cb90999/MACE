@@ -97,6 +97,29 @@ class ContextSnapshot:
                                          # this stop isn't one of its
                                          # breakpoints.
 
+    # --- Stop context (thread/frame identity + disassembly at pc) ---
+    # SB-API equivalents of what lldb's own native stop text shows, so
+    # MACE can render a styled replacement instead of relying on/
+    # duplicating that raw text. See BACKLOG.md 2026-11-06/2026-11-13.
+    thread_index: int = 0           # thread.GetIndexID() -- the "#N" lldb
+                                     # itself prints, NOT GetThreadID()
+                                     # (a much larger raw OS thread id)
+    thread_name: str = ""           # thread name, or queue name as fallback
+                                     # e.g. "main-thread"
+    frame_symbol: str = ""          # e.g. "mach_msg2_trap" -- "" if unresolved
+    frame_offset: int = 0           # pc - symbol start address (0 if
+                                     # frame_symbol is "")
+    frame_module: str = ""          # module filename containing pc, e.g.
+                                     # "libsystem_kernel.dylib"
+    disasm: list = field(default_factory=list)
+                                     # [(address, "mov x16, #-0x2f"), ...] --
+                                     # a few instructions starting at pc, via
+                                     # target.ReadInstructions (same API
+                                     # already proven in
+                                     # _is_objc_msgsend_call_site). Render
+                                     # marks whichever entry's address == pc
+                                     # with "->"; the rest get spaces.
+
     # --- Derived helpers ---
 
     def w(self, n: int) -> int:

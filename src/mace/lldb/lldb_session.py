@@ -430,6 +430,70 @@ def _get_call_chain(thread: lldb.SBThread, depth: int = 2) -> list[str]:
     return chain
 
 
+def _get_thread_identity(thread: lldb.SBThread) -> tuple:
+    """
+    Return (thread index, thread name) matching what lldb's own
+    "thread #N, queue = '...'" stop line shows -- GetIndexID() is the
+    "#N" lldb prints (NOT GetThreadID(), which is the much larger raw
+    OS thread id). Falls back from GetName() to GetQueueName() since
+    most AArch64/iOS threads carry a GCD queue name but no explicit
+    thread name.
+    """
+    try:
+        index = thread.GetIndexID()
+        name = thread.GetName() or thread.GetQueueName() or ""
+        return index, name
+    except Exception:
+        return 0, ""
+
+
+def _get_frame_identity(frame: lldb.SBFrame) -> tuple:
+    """
+    Return (symbol name, offset-into-symbol, containing module filename)
+    for the current frame's pc -- the same symbol+offset pairing lldb's
+    own "frame #0: 0x... module`symbol + offset" line shows, built from
+    the SB API rather than parsed out of that line's text.
+    """
+    try:
+        symbol = frame.GetSymbol()
+        func_name = frame.GetFunctionName() or ""
+        module = frame.GetModule()
+        module_name = module.GetFileSpec().GetFilename() if module.IsValid() else ""
+        offset = 0
+        if symbol.IsValid():
+            target = frame.GetThread().GetProcess().GetTarget()
+            start = symbol.GetStartAddress().GetLoadAddress(target)
+            if start != lldb.LLDB_INVALID_ADDRESS:
+                offset = frame.GetPC() - start
+        return func_name, offset, module_name
+    except Exception:
+        return "", 0, ""
+
+
+def _get_disasm_at_pc(frame: lldb.SBFrame, target, count: int = 3) -> list:
+    """
+    Read `count` instructions starting at pc via target.ReadInstructions
+    -- same API already proven in _is_objc_msgsend_call_site/
+    _is_syscall_site, just reading more than one instruction. Returns []
+    on any failure (unreadable memory, invalid frame) rather than a
+    half-filled list.
+    """
+    try:
+        pc_addr = frame.GetPCAddress()
+        instructions = target.ReadInstructions(pc_addr, count)
+        out = []
+        for i in range(instructions.GetSize()):
+            insn = instructions.GetInstructionAtIndex(i)
+            addr = insn.GetAddress().GetLoadAddress(target)
+            mnemonic = insn.GetMnemonic(target) or ""
+            operands = insn.GetOperands(target) or ""
+            text = f"{mnemonic} {operands}".strip()
+            out.append((addr, text))
+        return out
+    except Exception:
+        return []
+
+
 def _annotate_finding(snap: ContextSnapshot) -> None:
     """
     Annotate the panel with a loaded finding's kind/note/suggested_action

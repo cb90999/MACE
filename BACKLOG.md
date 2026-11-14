@@ -3625,6 +3625,35 @@ redundant with the new "-- stop --" block rather than the primary
 source of that information, which is the intended end state given
 the architectural limit already found. Item closed.
 
+
+UPDATE 2026-11-14, continued -- cross-platform due diligence: live-
+validated the same stop-context block on Android (Allsafe,
+infosecadventures.allsafe, Pixel 10a) via scripts/android_connect.sh.
+First two attempts showed a real bug, not a platform-support gap:
+the panel printed cleanly up to x24 then silently stopped, no
+traceback, no error. Confirmed via a direct `script` call to
+render_panel() in isolation (bypassing the stop-hook's stream.Print
+entirely) that the function itself built the full, correct 3172-char
+string with zero exceptions -- the renderer was fine. Root cause
+traced to ContextSnapshot.as_ascii(): it only stripped TRAILING NUL
+bytes, so a register like x25 = 0x00000000484e0000 (little-endian
+bytes 00 00 4e 48 00 00 00 00) decoded as the literal string
+"\x00\x00NH" -- a real NUL byte reaching the terminal, corrupting
+line rendering on this remote connection in a way that, under the
+old single giant stream.Print() call in handle_stop, took the rest
+of the panel down with it (no exception, because nothing raised --
+the corruption happened downstream of Python). Fixed as_ascii() to
+stop at the first NUL (commit fd42505) -- correct both as a bugfix
+(a value starting with NUL isn't printable text) and as the
+corruption's actual cause. Also chunked handle_stop's Print() into
+one call per line as defense-in-depth, since the exact transport-
+level mechanism by which one NUL byte could erase everything after
+it wasn't fully traced (same commit). Re-tested clean afterward:
+full panel including the new "-- stop --" block rendered correctly
+across all 37 of Allsafe's threads, no corruption, no truncation.
+iOS was never affected by this bug either before or after the fix.
+Cross-platform validation of the stop-context feature itself: done.
+
 ## Deferred: decoded ASCII/flag content should be primary, not a buried comment (friend feedback, captured late)
 
 Friend feedback on the register panel, surfaced in conversation but

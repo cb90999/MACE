@@ -215,7 +215,16 @@ def snapshot_from_frame(frame: lldb.SBFrame,
     # calls are safe to make unconditionally regardless of target OS.
     _annotate_linux_syscall(snap, frame, target)
 
+    # --- Stop context identity (thread/frame/disasm for the stop-context
+    # block) -- SB-API equivalents of what lldb's own native stop text
+    # shows, so MACE can render a styled replacement instead of relying
+    # on/duplicating that raw text. See BACKLOG.md 2026-11-06/2026-11-13.
+    snap.thread_index, snap.thread_name = _get_thread_identity(frame.GetThread())
+    snap.frame_symbol, snap.frame_offset, snap.frame_module = _get_frame_identity(frame)
+    snap.disasm = _get_disasm_at_pc(frame, target, count=3)
+
     return snap
+
 
 def _annotate_swift_location(snap, frame) -> None:
     """

@@ -167,7 +167,42 @@ def render_match_status(snap: ContextSnapshot, a: int, b: int) -> str:
     match = va == vb
     status = f"{Color.GREEN}MATCH{Color.RESET}" if match else f"{Color.RED}MISMATCH{Color.RESET}"
     delta  = "" if match else f"  delta=0x{abs(va - vb):08x}"
+
     return f"  w{a} vs w{b}  →  {status}{delta}"
+
+
+def render_stop_context(snap: ContextSnapshot) -> str:
+    # Replaces the raw lldb stop dump (Process N stopped / frame #0 /
+    # disassembly listing) that used to print below the MACE panel --
+    # the "visible seam" a friend's feedback flagged 2026-11-06. Pulls
+    # the same handful of fields via the SB API (thread_index/name,
+    # frame_symbol/offset/module, disasm) instead of parsing lldb's own
+    # text, and always renders -- every real stop has this info, same
+    # as render_registers below it.
+    lines = [_separator("stop")]
+
+    if snap.stop_reason == "breakpoint" and snap.breakpoint_id:
+        reason_str = f"breakpoint {snap.breakpoint_id}"
+    else:
+        reason_str = snap.stop_reason
+    lines.append(f"  {Color.WHITE}STOPPED{Color.RESET}  {reason_str}")
+
+    thread_tag = f"  {snap.thread_name}" if snap.thread_name else ""
+    lines.append(f"  thread #{snap.thread_index}{thread_tag}")
+
+    if snap.frame_symbol:
+        module_tag = f"  [{snap.frame_module}]" if snap.frame_module else ""
+        lines.append(f"  {Color.CYAN}{snap.frame_symbol}{Color.RESET} +0x{snap.frame_offset:x}{module_tag}")
+
+    if snap.disasm:
+        lines.append("")
+        for addr, text in snap.disasm:
+            if addr == snap.pc:
+                lines.append(f"  {Color.YELLOW}->{Color.RESET} 0x{addr:x}  {text}")
+            else:
+                lines.append(f"     0x{addr:x}  {text}")
+
+    return "\n".join(lines)
 
 
 def render_panel(snap: ContextSnapshot,
@@ -211,5 +246,6 @@ def render_panel(snap: ContextSnapshot,
         parts.append(_separator("syscall"))
         kind_tag = f"  ({snap.syscall_kind})" if snap.syscall_kind else ""
         parts.append(f"  {Color.CYAN}[{snap.syscall_name}]{Color.RESET}{kind_tag}")
+    parts.append(render_stop_context(snap))
     parts.append(Color.CYAN + "─" * width + Color.RESET)
     return "\n".join(parts)

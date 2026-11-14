@@ -3591,6 +3591,40 @@ line/"Target N: (...) stopped." remain as an unavoidable floor below
 MACE's own panel -- accepted, not a bug, given the architectural
 finding above.
 
+
+UPDATE 2026-11-14: the deferred richer block is now implemented and
+live-validated on Enigma (iPad, palera1n). New ContextSnapshot fields
+(thread_index, thread_name, frame_symbol, frame_offset, frame_module,
+disasm) populated in snapshot_from_frame via three new SB-API helpers
+in lldb_session.py (_get_thread_identity, _get_frame_identity,
+_get_disasm_at_pc -- the last reusing the same target.ReadInstructions
+pattern already proven in _is_objc_msgsend_call_site/_is_syscall_site).
+render_stop_context() in context_panel.py renders a "-- stop --"
+section (STOPPED <reason>/thread #N <name>/symbol +offset [module]/
+a few disasm lines with "->" at pc) and is appended in render_panel()
+right where the raw lldb dump used to sit -- directly replacing the
+"seam" the original feedback flagged, not just adding a new section
+alongside it.
+
+Live-validated two stop-reason cases: a `step` stop (STOPPED step,
+thread #1 com.apple.main-thread, mach_msg2_internal +0x48
+[libsystem_kernel.dylib]) and a `breakpoint` stop (STOPPED
+breakpoint 1.1, mach_msg2_trap +0x0 [libsystem_kernel.dylib]) --
+the latter an almost exact match to this entry's original 2026-11-06
+mockup, including the disassembled instructions. Also confirmed the
+new block coexists cleanly with the changed-register highlighting
+feature (2026-11-13) -- x8/x9/x27/x28 showed GREEN in the registers
+section on the same stop the new "-- stop --" block rendered.
+Commits: c311083 (fields), add96d0 (helpers), fc89c7a (wiring),
+db56663 (render + panel integration).
+
+lldb's own unsuppressible floor ("Process N stopped"/default
+thread-stop-format line/"Target N: (...) stopped.", see 2026-11-13
+update above) still prints below MACE's panel -- now visibly
+redundant with the new "-- stop --" block rather than the primary
+source of that information, which is the intended end state given
+the architectural limit already found. Item closed.
+
 ## Deferred: decoded ASCII/flag content should be primary, not a buried comment (friend feedback, captured late)
 
 Friend feedback on the register panel, surfaced in conversation but

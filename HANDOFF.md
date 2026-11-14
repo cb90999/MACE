@@ -454,6 +454,21 @@ and to any LLM assistant working the project, not just one specific one.
    visibly redundant rather than the primary source of that info --
    the intended end state, not a loose end.
 
+   Cross-platform due diligence (2026-11-14, same day): live-tested
+   the same block on Android (Allsafe, Pixel 10a) and found a real
+   bug in the process, not just confirmed the feature -- as_ascii()
+   only stripped trailing NUL bytes, so a register like
+   0x00000000484e0000 decoded as a literal NUL reaching the terminal
+   and corrupting line rendering, which under the old single
+   stream.Print() call took the rest of the panel with it (no
+   exception anywhere -- isolated via a direct render_panel() call
+   through lldb's `script` command, which proved the renderer itself
+   was always correct). Fixed as_ascii() to stop at the first NUL
+   (commit fd42505), plus chunked handle_stop's Print() as defense-
+   in-depth. Re-validated clean on Allsafe across 37 threads; iOS
+   unaffected throughout. Full trace in BACKLOG.md's 2026-11-14
+   continuation.
+
    RecoveryDemo build also got a first compile/test pass ahead of
    schedule on 2026-11-12 (Polar H10 not arriving until the weekend)
    -- CRYPTO and ANTI-TAMPER both validated via a DEBUG-only synthetic

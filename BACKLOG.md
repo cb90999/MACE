@@ -3882,6 +3882,19 @@ threads, or selectively detaching tracing from non-essential background
 threads.
 
 
+UPDATE 2026-11-14: a friend's review of today's stop-context work
+flagged a relevant addition to "reducing per-stop MACE overhead"
+above -- snapshot_from_frame now reads 3 instructions via
+target.ReadInstructions on every rendered stop (for the stop-context
+block's disassembly, commits c311083/fc89c7a/db56663), on top of
+whatever per-stop cost already existed. Reasonable for an interactive
+panel on its own, but it's additional real work landing exactly where
+this open RedRunner overhead question lives. Not reopening the
+investigation now (friend's explicit call, and CB agreed) -- flagging
+so that whenever this item is revisited post-December, the disasm
+read is included in whatever's measured, not treated as free.
+
+
 ## Step 5 replacement target selected: Allsafe-Android (2026-11-07)
 
 Follow-up to the two entries above (RedRunner's SIGXCPU/SIGPWR fix and

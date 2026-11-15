@@ -511,7 +511,6 @@ and to any LLM assistant working the project, not just one specific one.
    dated entries for those two.
 
 - N4TIVE ch03 and RedRunner findings JSONs: BOTH deliberately deferred
-
   (2026-11-03), not scheduled. RedRunner's deferral is permanent by
   design (it's v3's blind test case, item 2 above); ch03's solve
   techniques (direct native-function-call injection, a TOCTOU defeat

@@ -499,7 +499,19 @@ and to any LLM assistant working the project, not just one specific one.
    MACE's scope (both the fed-findings and blind-walkthrough entry
    points now independently validated on real targets).
 
+2. N4TIVE's remaining challenges (XOR decryption, buffer overflow,
+   custom stack-based VM) -- queued for next session (2026-11-19).
+   Same app as ch03/ch04 (com.ctf.nativectf), confirmed native-code-
+   based, but not yet scoped the way those two were going in. First
+   step: identify the exact challenge entry points and reverse far
+   enough to know what each gate actually checks, same prep ch03/ch04
+   needed, before attempting a MACE-driven solve. CB's explicit call
+   (2026-11-15) to defer both the Scudo-validation app-build and the
+   Unity thread-count investigation past this -- see BACKLOG.md's
+   dated entries for those two.
+
 - N4TIVE ch03 and RedRunner findings JSONs: BOTH deliberately deferred
+
   (2026-11-03), not scheduled. RedRunner's deferral is permanent by
   design (it's v3's blind test case, item 2 above); ch03's solve
   techniques (direct native-function-call injection, a TOCTOU defeat
@@ -517,9 +529,6 @@ and to any LLM assistant working the project, not just one specific one.
   entry warns about.
 
 Deferred, no session currently allocated:
-- N4TIVE's remaining challenges not already covered (XOR decryption,
-  buffer overflow, custom stack-based VM) — not yet scoped as
-  backlog-relevant the way Anti-Debug Gauntlet/Type Confusion are.
 - Whether the demo-day debugserver build (NowSecure's own
   environment, or whichever device ends up used) supports
   qMemoryRegionInfo — determines how much of the heap/stack region

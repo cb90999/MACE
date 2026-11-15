@@ -132,6 +132,15 @@ def render_registers(snap: ContextSnapshot,
     return "\n".join(lines)
 
 
+def render_data_previews(snap: ContextSnapshot) -> str:
+    lines = [_separator("data")]
+    for name, count, hex_preview in snap.data_previews:
+        count_tag = f"{count} bytes" if count is not None else "? bytes"
+        preview_tag = f"  {hex_preview}..." if hex_preview else ""
+        lines.append(f"  {Color.CYAN}{name}{Color.RESET}: {count_tag}{preview_tag}")
+    return "\n".join(lines)
+
+
 def render_stop_banner(snap: ContextSnapshot) -> str:
     stripped_tag = f"{Color.RED}[stripped]{Color.RESET} " if snap.is_stripped else ""
 
@@ -234,6 +243,8 @@ def render_panel(snap: ContextSnapshot,
     if swift_str is not None:
         parts.append(_separator("swift string"))
         parts.append(f"  {Color.CYAN}'{swift_str}'{Color.RESET}  (x0:x1, small-string ABI)")
+    if snap.data_previews:
+        parts.append(render_data_previews(snap))
     if snap.jni_location:
         parts.append(_separator("jni"))
         parts.append(f"  {Color.CYAN}[{snap.jni_location}]{Color.RESET}")

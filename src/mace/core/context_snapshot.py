@@ -120,6 +120,24 @@ class ContextSnapshot:
                                      # marks whichever entry's address == pc
                                      # with "->"; the rest get spaces.
 
+    data_previews: list = field(default_factory=list)
+                                     # [(var_name, byte_count, hex_preview), ...]
+                                     # -- short hex preview of any
+                                     # Foundation.Data-typed frame variable,
+                                     # via the real Swift expression
+                                     # evaluator. Deliberately NOT a
+                                     # register-content decode like
+                                     # swift_small_string() -- Data's
+                                     # in-register content is a pointer into
+                                     # Apple's private, version-specific
+                                     # NSData/_DataStorage internals, so this
+                                     # only runs against variables lldb's own
+                                     # DWARF info confirms are actually
+                                     # Data. hex_preview is truncated to the
+                                     # first N bytes requested; byte_count is
+                                     # the real total. See BACKLOG.md
+                                     # 2026-11-15.
+
     # --- Derived helpers ---
 
     def w(self, n: int) -> int:

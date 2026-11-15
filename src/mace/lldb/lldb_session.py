@@ -222,6 +222,7 @@ def snapshot_from_frame(frame: lldb.SBFrame,
     snap.thread_index, snap.thread_name = _get_thread_identity(frame.GetThread())
     snap.frame_symbol, snap.frame_offset, snap.frame_module = _get_frame_identity(frame)
     snap.disasm = _get_disasm_at_pc(frame, target, count=3)
+    snap.data_previews = _get_swift_data_previews(frame, max_bytes=16)
 
     return snap
 
@@ -501,6 +502,66 @@ def _get_disasm_at_pc(frame: lldb.SBFrame, target, count: int = 3) -> list:
         return out
     except Exception:
         return []
+
+
+def _get_swift_data_previews(frame: lldb.SBFrame, max_bytes: int = 16) -> list:
+    """
+    Find frame-visible Foundation.Data arguments/locals and produce a
+    short hex preview of each via the real Swift Data iteration (lldb's
+    expression evaluator), bounded to the first max_bytes bytes.
+
+    Deliberately NOT a register-content decoder like swift_small_string()
+    -- Data's register content is just a pointer into Apple's private,
+    version-specific NSData/_DataStorage internals (no public, stable
+    offsets to decode from), and a raw pointer can't be confirmed to
+    actually BE a Data value without type information. This instead
+    walks lldb's own DWARF-backed variable list, filters to the exact
+    type name "Foundation.Data", and only then evaluates a short,
+    bounded Swift expression against that confirmed-typed variable --
+    same technique proven manually during RecoveryDemo due diligence
+    (BACKLOG.md 2026-11-15), just automated and bounded to a preview.
+
+    Returns [] on any failure, or if no Data-typed variable is in scope
+    -- this is a convenience preview, never a required part of the
+    panel, same "best-effort, never crash MACE" discipline as the other
+    annotators.
+    """
+    previews = []
+    try:
+        variables = frame.GetVariables(True, True, False, True)
+        for var in variables:
+            type_name = var.GetTypeName() or ""
+            if type_name not in ("Foundation.Data", "Data"):
+                continue
+            name = var.GetName()
+            if not name:
+                continue
+            count = None
+            try:
+                count_val = frame.EvaluateExpression(f"{name}.count")
+                if count_val.IsValid() and not count_val.GetError().Fail():
+                    count = count_val.GetValueAsSigned()
+            except Exception:
+                pass
+            hex_preview = None
+            try:
+                expr = (
+                    f'{name}.prefix({max_bytes}).map '
+                    f'{{ String(format: "%02x", $0) }}.joined()'
+                )
+                hex_val = frame.EvaluateExpression(expr)
+                if hex_val.IsValid() and not hex_val.GetError().Fail():
+                    summary = hex_val.GetSummary() or ""
+                    if summary.startswith('"') and summary.endswith('"'):
+                        summary = summary[1:-1]
+                    hex_preview = summary
+            except Exception:
+                pass
+            if count is not None or hex_preview:
+                previews.append((name, count, hex_preview))
+    except Exception:
+        pass
+    return previews
 
 
 def _annotate_finding(snap: ContextSnapshot) -> None:

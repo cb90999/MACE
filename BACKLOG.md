@@ -4217,6 +4217,32 @@ today's runs that worked cleanly.
   a deliberate stand-in, not a substitute for eventually confirming
   against a real call site if one turns up.
 
+UPDATE 2026-11-15: a natural real-world case for a *further* decoder
+turned up -- RecoveryDemo (CB's own non-MACE app, Polar H10 BLE
+heart-rate recovery demo), breaking at HealthDataCrypto.encrypt(_:)
+to inspect the real plaintext argument before encryption (due
+diligence after BLE-AUTH's H10 hardware validation). The panel's
+registers correctly showed no cleartext -- not a gap, the expected
+result: by that stop the `Data` argument was already stack-spilled,
+and even at function entry a `Data` is a reference-counted heap
+buffer (pointer + count in a register), not inline bytes the way a
+small String is. Had to fall back to `frame variable`/`expr
+plaintext.map { String(format: "%02x", $0) }.joined()` by hand to
+get the real 260-byte JSON payload (confirmed genuinely real: its
+sampleCount matched the on-screen RR window, sdnnMs was a real
+computed HRV value, not a placeholder).
+
+Proposed: a `swift_data()` decoder in context_snapshot.py, parallel
+to swift_small_string() -- given a register holding a Data-shaped
+pointer, dereference its buffer + count (layout TBD, needs a probe
+similar to the small-string ABI work) and show a short preview
+inline in the panel, the way as_ascii()/swift_small_string() already
+do for other register-held values. Would turn this exact due-
+diligence check (what's actually in a plaintext argument right
+before it's encrypted) into a one-glance panel read instead of a
+manual expr command. Not scheduled -- logged as a concrete idea with
+a real motivating case, for a future UI-improvements pass.
+
 ## Future capability idea, flagged not pursued (2026-11-11)
 
 - mace_expression / mace_call -- a tool wrapping LLDB's expr/call to

@@ -485,6 +485,15 @@ and to any LLM assistant working the project, not just one specific one.
    now closed. The full 2026-11-09 UI-improvements pass is also closed
    out -- all four items done.
 
+   `swift_data()` decoder (BACKLOG.md, 2026-11-15 UPDATE under the
+   2026-11-09 UI-improvement-backlog entry): also now DONE, same day --
+   implemented as a DWARF-type-checked Data-variable preview (not a
+   register decode, which turned out not to be viable for Data the way
+   it is for Swift's small-string ABI), live-validated at the same
+   HealthDataCrypto.encrypt(_:) breakpoint, byte-for-byte matching the
+   known-correct hex dump (commit 52687e5). This closes out every UI
+   item logged to date.
+
    No explicit next task queued as of 2026-11-15 -- see BACKLOG.md's
    same-date architectural-reflection entry for where this leaves
    MACE's scope (both the fed-findings and blind-walkthrough entry

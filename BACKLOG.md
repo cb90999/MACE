@@ -4243,6 +4243,33 @@ before it's encrypted) into a one-glance panel read instead of a
 manual expr command. Not scheduled -- logged as a concrete idea with
 a real motivating case, for a future UI-improvements pass.
 
+UPDATE 2026-11-15: implemented same day, with a different (and more
+robust) design than originally sketched above. A register-content
+decode turned out not to be viable for Data the way it is for the
+Swift small-string ABI: Data's in-register content is just a pointer
+into Apple's private, version-specific NSData/_DataStorage internals
+with no public, stable offsets, and a raw pointer can't be confirmed
+to actually BE a Data value without type information -- any heap
+pointer looks like a heap pointer. Real design: walk the frame's
+DWARF-backed variable list, filter to the exact type name
+"Foundation.Data", and run a short, bounded Swift expression
+(`.prefix(N).map { String(format: "%02x", $0) }.joined()`) only
+against a variable lldb itself confirms is actually Data -- same
+technique already proven by hand during today's BLE-AUTH due
+diligence, just automated into a new `data_previews` ContextSnapshot
+field and a `-- data --` panel section (commit 52687e5).
+Live-validated at the same HealthDataCrypto.encrypt(_:) breakpoint:
+panel showed `plaintext: 259 bytes  7b2273616d706c65223a7b2273616d70...`,
+matching the known-correct full hex dump byte-for-byte for the
+requested 16-byte preview window. One real bug found and fixed along
+the way: a multi-part dictated edit landed the new
+`_get_swift_data_previews()` function but missed the one-line wiring
+call inside `snapshot_from_frame()`, so the function existed but was
+never invoked -- caught by testing the function standalone via
+`script` first (worked), then testing `snapshot_from_frame()` as a
+whole (came back empty), isolating the gap to the wiring rather than
+the logic before touching anything.
+
 ## Future capability idea, flagged not pursued (2026-11-11)
 
 - mace_expression / mace_call -- a tool wrapping LLDB's expr/call to

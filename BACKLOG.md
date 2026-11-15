@@ -4330,3 +4330,85 @@ was simply luck. Not re-tested deliberately -- the single-channel
 rule from 2026-11-08 still stands; this wasn't a sanctioned retry of
 mixing channels, just an observation worth a flag for anyone who hits
 it again.
+
+
+## RecoveryDemo BLE-AUTH: real Polar H10 validated end-to-end, plus live-debugger due diligence at the crypto boundary (2026-11-15)
+
+H10 arrived and was paired via the Polar Flow app (RecoveryDemo/iPad
+Bluetooth didn't surface it directly -- Polar H10 is BLE-only, no
+Bluetooth Classic, so it's invisible to iOS Settings > Bluetooth and
+only shows up to an app actively scanning via CoreBluetooth; Polar
+Flow had to be force-quit afterward to free the single GATT
+connection slot for RecoveryDemo). Two real-world setup snags hit
+along the way, neither a regression: RecoveryDemo's own Bluetooth
+permission toggle (Settings > Privacy & Security > Bluetooth) was off
+despite an earlier grant, and the anti-tamper jailbreak check
+correctly blocked sync on the same jailbroken iPad used throughout
+all MACE work (expected behavior, not a bug -- jailbreak detection
+was already separately validated in a prior session).
+
+Baseline run (anti-tamper enforcement on, no debugger attached):
+Scan -> Connected / real-time BPM+RR samples -> Verified, recovery
+score 18. This closes RecoveryDemo's BLE-AUTH item -- CRYPTO and
+ANTI-TAMPER were already validated via the DEBUG-only synthetic
+RR-data injector (2026-11-12); this was the first real-peripheral
+run, completing all three validation areas.
+
+Extra due diligence, not originally scoped: watched the same sync
+under a live-attached MACE/lldb session. Required switching "Enforce
+anti-tamper checks" off (keeping "Active check" = "jailbreak-check
+only" -- confirmed in a prior session this check and the sysctl
+check are safe to run with a debugger attached, unlike the
+ptrace(PT_DENY_ATTACH)-based check, which self-kills the process at
+the kernel level if a debugger is already attached). With enforcement
+off, detection still correctly fires (recovery score 21 this run,
+different scale from the 18/93bpm raw-rate baseline, not a
+discrepancy) but doesn't block sync, so the full pipeline could run
+to completion under observation.
+
+Located HealthDataCrypto.encrypt(_:) via `image lookup -r -n` (the
+`-s <module>` filter errored on this lldb version -- "invalid
+combination of options" -- dropping it worked, 47 noisier matches
+including the right one) with zero findings.json input, confirmed
+plaintext was never visible in registers by the time of the
+breakpoint (Data is a reference-counted heap buffer, not inline bytes
+like Swift's small-string ABI -- expected, not a gap; see the
+swift_data() idea logged above), then fell back to `frame
+variable`/`expr plaintext.map { String(format: "%02x", $0) }.joined()`
+to pull the real 260-byte JSON payload by hand. Confirmed it was
+genuinely real data (sampleCount matched the on-screen RR window,
+sdnnMs a real computed HRV value) rather than a placeholder. Stepped
+through to `encrypted` and confirmed the ciphertext: 288 bytes = 260
+(plaintext) + 12 (AES-GCM nonce) + 16 (tag), exactly matching
+`.combined`'s documented format -- stronger evidence of correctness
+than "it looks encrypted."
+
+MACE's changed-register highlighting (shipped 2026-11-13) held up
+cleanly on this target too, visibly marking the registers touched by
+`fini`/`next` across the crypto call boundary.
+
+## Architectural reflection: MACE validated on both its intended entry points (2026-11-15)
+
+Closing thought after RecoveryDemo's BLE-AUTH due diligence, worth
+recording since it validates a scope decision rather than describing
+new work. MACE is a pure dynamic/observation tool, deliberately
+scoped the same way as Frida/objection/radare2+r2frida -- it does not
+do static analysis itself. The findings.json contract
+(mace_load_findings, core/findings.py) is the interface: whatever
+produces it (JEB, Ghidra, an LLM reading disassembly, a human) is out
+of scope by design, decoupling MACE from the static-analysis half
+entirely. This was deliberately re-affirmed, not reconsidered.
+
+Both of MACE's intended entry points now have independent, real
+validation, from two different targets:
+- Fed findings: eeacollatz, end-to-end via MACE's own MCP surface
+  (Step 4, 2026-11-06) -- an AI orchestrator consuming a pre-built
+  findings.json.
+- Blind walkthrough (zero findings.json): RecoveryDemo today -- a
+  cold, real app, not a controlled CTF built to cooperate, still
+  reached from "where's the encrypt call" to a fully verified
+  plaintext/ciphertext trace using only image lookup + source read +
+  file/line breakpoint + frame variable/expr.
+
+Conclusion: the scope boundary holds up in practice, not just in
+design -- on a target that wasn't built to prove it.

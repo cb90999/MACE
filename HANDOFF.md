@@ -474,9 +474,21 @@ and to any LLM assistant working the project, not just one specific one.
    -- CRYPTO and ANTI-TAMPER both validated via a DEBUG-only synthetic
    RR-data injector; BLE-AUTH still needs the real peripheral.
 
-   Next: RecoveryDemo's remaining BLE-AUTH validation once the H10
-   arrives (this weekend). The full 2026-11-09 UI-improvements pass is
-   now closed out -- all four items done.
+   RecoveryDemo's BLE-AUTH validation is now also DONE (2026-11-15,
+   BACKLOG.md) -- real Polar H10 hardware paired and synced
+   end-to-end (recovery score 18, enforcement on), plus extra due
+   diligence watching the full pipeline under a live-attached
+   MACE/lldb session (enforcement off, jailbreak-check only) down to
+   inspecting real plaintext/ciphertext at HealthDataCrypto.encrypt(_:)
+   via zero-findings-json "blind walkthrough" technique. All three
+   RecoveryDemo validation areas (CRYPTO, ANTI-TAMPER, BLE-AUTH) are
+   now closed. The full 2026-11-09 UI-improvements pass is also closed
+   out -- all four items done.
+
+   No explicit next task queued as of 2026-11-15 -- see BACKLOG.md's
+   same-date architectural-reflection entry for where this leaves
+   MACE's scope (both the fed-findings and blind-walkthrough entry
+   points now independently validated on real targets).
 
 - N4TIVE ch03 and RedRunner findings JSONs: BOTH deliberately deferred
   (2026-11-03), not scheduled. RedRunner's deferral is permanent by

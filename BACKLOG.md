@@ -4270,6 +4270,26 @@ never invoked -- caught by testing the function standalone via
 whole (came back empty), isolating the gap to the wiring rather than
 the logic before touching anything.
 
+UPDATE 2026-11-15, friend review: flagged a real caution worth
+tracking before treating this as always-on. `_get_swift_data_previews()`
+calls lldb's Swift expression evaluator from inside `snapshot_from_frame()`,
+so this now runs on every applicable stop (any frame with a
+Foundation.Data-typed variable in scope), not just on-demand. Expression
+evaluation can be slow or require executing code in the target --
+exactly the category of overhead that caused real problems before
+(RedRunner's tracing-overhead self-kill, the Allsafe ANR from
+interleaving native lldb with concurrent MCP-socket calls). Today's
+single-breakpoint test says nothing about behavior on a target with
+many Data-typed locals live across many stops, or a target where the
+Swift runtime itself is slow/hung to call into. Not yet measured.
+Proposed before calling this safe to leave on by default: time the
+evaluator calls across a real stepping session (not just one
+breakpoint hit) and consider a short timeout or an explicit
+mace_data_preview_on/off toggle (matching the existing on/off pattern
+of mace_trace_on, mace_mcp_on) if a difficult target shows real
+latency or hangs. Not scheduled -- logged as a concrete follow-up,
+not a reason to revert today's work.
+
 ## Future capability idea, flagged not pursued (2026-11-11)
 
 - mace_expression / mace_call -- a tool wrapping LLDB's expr/call to
@@ -4439,3 +4459,22 @@ validation, from two different targets:
 
 Conclusion: the scope boundary holds up in practice, not just in
 design -- on a target that wasn't built to prove it.
+
+UPDATE 2026-11-15, friend review: correction accepted -- the "blind
+walkthrough" bullet above overstated what today's RecoveryDemo session
+actually proved. The recorded path (image lookup, reading source,
+file/line breakpoint, frame variable/expr) was a human analyst working
+through MACE's observability panel, on an app CB built himself -- it
+is NOT a blind AI-orchestrated walkthrough through MACE's own MCP tool
+surface, the way the analyst-guided Allsafe tier was proven
+specifically through mace_set_breakpoint/mace_patch/mace_continue
+(2026-11-12). The only fully-blind orchestrator run attempted to date
+(Allsafe, 2026-11-08) correctly came back empty and was retired as a
+validation target -- "fully blind, zero input, AI-driven" is not
+something RecoveryDemo retested or overturned. Restated accurately:
+RecoveryDemo validates that a human analyst gets real value from
+MACE's panel with zero findings-JSON input, on a cold target not built
+to cooperate. The eeacollatz Step 4 run (2026-11-06) remains the only
+clean, end-to-end, AI-orchestrated proof point, and still requires a
+fed findings.json to get there. This is a narrower claim than the one
+above, and -- per the review -- a more credible one.

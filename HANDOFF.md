@@ -510,6 +510,53 @@ and to any LLM assistant working the project, not just one specific one.
    Unity thread-count investigation past this -- see BACKLOG.md's
    dated entries for those two.
 
+3. GEF-inspired pointer-dereference chain for address-shaped registers
+   -- queued for next session (2026-11-19), alongside item 2. Scoping
+   discussion 2026-11-16 (CB: "Is there anything architecturally we can
+   do to improve the readability? Can we get some inspiration from GDB
+   GEF?"), prompted by the per-register decimal annotation ("#
+   8831305264u") that's genuinely noise once a value is already
+   address-shaped, especially the case where it fails to resolve a
+   region label and falls through to the raw decimal anyway. CB's
+   call: skip the smaller quick fix (gate decimal strictly to non-
+   address-shaped values) in favor of the bigger GEF-style upgrade
+   directly, given schedule cushion and how visible the register panel
+   is -- "I think it sets the right tone."
+
+   Design agreed 2026-11-16:
+   - New `_follow_pointer_chain(process, target, addr, max_depth=2)`
+     in lldb_session.py. Per hop, in order: (1) does the address point
+     at a printable C string (new bounded read helper, ~48 bytes,
+     null-terminated or "..." truncated -- NOT a reuse of
+     ContextSnapshot.as_ascii(), which is purpose-built for an
+     already-in-hand 8-byte register value, not a fresh variable-length
+     memory read) -- show it, stop; (2) does the address resolve to a
+     function/symbol in a loaded module via the same
+     target.ResolveLoadAddress() pattern _classify_memory_region()
+     already uses -- show "symbol +0xN [module]", stop; (3) otherwise
+     read 8 bytes there and, if that looks address-shaped
+     (_ADDR_THRESHOLD) and unvisited (cycle guard), follow it and
+     repeat; (4) otherwise stop and show _classify_memory_region()'s
+     label for wherever the chain ended. Replaces today's decimal
+     fallback for address-shaped values only -- small-value registers
+     keep the existing "# 607u w=0x0000025f" annotation unchanged.
+   - Default depth 2, not 3 -- deliberately conservative given the
+     fresh overhead lesson from swift_data() (BACKLOG.md 2026-11-15
+     friend-review UPDATE): each hop is a real remote memory
+     read/symbol-resolve, and a typical stop has ~10-15 address-shaped
+     registers out of 29, so this is more expensive than swift_data()
+     per stop, not less. Baking the mitigation in up front this time
+     rather than retrofitting it.
+   - Two new commands, matching existing mace_watch/mace_trace_on-style
+     configurability: `mace_ptr_depth <N>` to tune depth,
+     `mace_ptr_chain_on`/`mace_ptr_chain_off` to disable entirely if a
+     target proves slow.
+   - Validation plan: live-test on Enigma (iOS) first, same known-good
+     recipe as the stop-context block, THEN explicitly re-test on
+     Allsafe (Android) before calling it done -- same cross-platform
+     due-diligence pattern that caught the as_ascii() NUL-byte bug last
+     time something looked iOS-clean (BACKLOG.md 2026-11-14).
+
 - N4TIVE ch03 and RedRunner findings JSONs: BOTH deliberately deferred
   (2026-11-03), not scheduled. RedRunner's deferral is permanent by
   design (it's v3's blind test case, item 2 above); ch03's solve

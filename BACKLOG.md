@@ -4648,3 +4648,55 @@ this session -- deprioritized given live ANR time pressure during the
 ch02 session; flagged here as a known limitation for a dedicated
 root-cause pass later, with this entry's exact transcript as
 reproducible evidence.
+
+
+## Friend review: pointer-dereference chain feedback -- cost, depth bounds, and the frame-identity bug elevated to correctness (2026-11-20)
+
+Positive: the GEF-style chain judged a genuine UI improvement over
+the old decimal/coarse-label fallback -- a register resolving to
+`"m"` or chaining through another address tells an analyst more than
+either did. Depth limit, cycle guard, and the on/off toggle
+specifically called out as the right design choices. The ch01/ch02
+runs exercised several real paths on-device; iOS validation correctly
+flagged as still open (matches this file's own entry above).
+
+Two concrete follow-ups before calling the feature's UI settled:
+
+1. Per-stop cost check, not yet measured. Each address-shaped
+   register can now trigger multiple remote memory reads and symbol
+   resolutions per hop -- on a busy/high-thread-count target this
+   could cost substantially more than the old single
+   _classify_memory_region() call per register. Need: benchmark
+   stop-hook wall time with mace_ptr_chain_on vs. mace_ptr_chain_off,
+   on N4TIVE and ideally a higher-thread-count target (RedRunner/
+   Unity or eeacollatz) -- not just assumed acceptable from the
+   swift_data() overhead reasoning already baked into the depth
+   default (HANDOFF.md item 3).
+2. `mace_ptr_depth` takes any int unvalidated right now -- a
+   negative or very large value could produce an empty/misleading
+   chain or an expensive stop. Needs a small enforced range (e.g.
+   clamp to something like 0-5) rather than trusting raw input.
+
+Separately, and called out as more important than either of the
+above: the garbled/misattributed stop-frame bug logged just above
+this entry is a correctness issue, not display polish -- an analyst
+could be steered toward the wrong code path by it, since the
+call-chain/stop sections disagreed with the registers section's own
+pc within the same snapshot. The selected-thread-race explanation
+already logged is a plausible hypothesis, not a confirmed root cause.
+Concrete next step for root-causing it: capture the thread ID and
+frame PC actually used by each panel section (registers vs.
+call-chain vs. stop-context) within one snapshot, to find exactly
+where in snapshot_from_frame() they diverge, rather than reasoning
+about it from the rendered output alone.
+
+Also flagged: keep the proposed static-analysis JSON contract
+narrowly scoped to symbol-name + file-offset only, explicitly never a
+cached runtime address -- the mmap base changes per process launch
+(ASLR), so an offset-based contract is the only form that stays valid
+across relaunches. Matches what was already designed above; good
+independent confirmation of the scope call.
+
+Commits referenced: a9dd935 (pointer-chain change), 19ad188
+(validation notes / ch01 findings / this file's known-limitation
+entry).

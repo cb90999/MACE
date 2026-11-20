@@ -500,30 +500,35 @@ and to any LLM assistant working the project, not just one specific one.
    points now independently validated on real targets).
 
 2. N4TIVE's remaining challenges (XOR decryption, buffer overflow,
-   custom stack-based VM) -- queued for next session (2026-11-19).
-   Same app as ch03/ch04 (com.ctf.nativectf), confirmed native-code-
-   based, but not yet scoped the way those two were going in. First
-   step: identify the exact challenge entry points and reverse far
-   enough to know what each gate actually checks, same prep ch03/ch04
-   needed, before attempting a MACE-driven solve. CB's explicit call
-   (2026-11-15) to defer both the Scudo-validation app-build and the
-   Unity thread-count investigation past this -- see BACKLOG.md's
-   dated entries for those two.
+   custom stack-based VM) -- ch01 and ch02 DONE (2026-11-20,
+   BACKLOG.md), ch06 (custom VM) still queued. ch01 (XOR decrypt)
+   required discovering and working around a new MACE/lldb
+   limitation: APK-embedded native libraries (`extractNativeLibs=
+   "false"`) are invisible to lldb's module tracking and
+   /proc/pid/maps-by-name search -- see BACKLOG.md's dated entry for
+   the full writeup and the extract-via-unzip/nm-offset/raw-address-
+   breakpoint workaround this produced. ch02 (buffer overflow)
+   solved via direct native-function-call injection to the hidden
+   compute_secret(), same ch03/ch04-proven technique -- no actual
+   overflow payload needed since the function ignores its arguments.
+   CB's explicit call (2026-11-15) to defer both the Scudo-validation
+   app-build and the Unity thread-count investigation past this --
+   see BACKLOG.md's dated entries for those two.
 
-3. GEF-inspired pointer-dereference chain for address-shaped registers
-   -- queued for next session (2026-11-19), alongside item 2. Scoping
-   discussion 2026-11-16 (CB: "Is there anything architecturally we can
-   do to improve the readability? Can we get some inspiration from GDB
-   GEF?"), prompted by the per-register decimal annotation ("#
-   8831305264u") that's genuinely noise once a value is already
-   address-shaped, especially the case where it fails to resolve a
-   region label and falls through to the raw decimal anyway. CB's
-   call: skip the smaller quick fix (gate decimal strictly to non-
-   address-shaped values) in favor of the bigger GEF-style upgrade
-   directly, given schedule cushion and how visible the register panel
-   is -- "I think it sets the right tone."
+3. ~~GEF-inspired pointer-dereference chain for address-shaped
+   registers~~ -- DONE (2026-11-20, BACKLOG.md, commit a9dd935).
+   Implemented as designed below and live-validated with mace_on on
+   N4TIVE ch01 (string detection) and ch02 (string detection, 3-hop
+   chaining, single-hop + hex fallback, unreadable-address fallback)
+   on a real Pixel 10a device, zero exceptions across 29 registers on
+   both targets. A cosmetic double-bracket bug was found and fixed
+   during implementation (see BACKLOG.md). Deliberate deviation from
+   the validation plan below: today's session was already deep in an
+   Android debugging flow, so Android went first -- Enigma (iOS)
+   validation per the original plan still needs to happen before this
+   is fully done cross-platform.
 
-   Design agreed 2026-11-16:
+   Design agreed 2026-11-16, implemented as designed:
    - New `_follow_pointer_chain(process, target, addr, max_depth=2)`
      in lldb_session.py. Per hop, in order: (1) does the address point
      at a printable C string (new bounded read helper, ~48 bytes,
@@ -555,7 +560,8 @@ and to any LLM assistant working the project, not just one specific one.
      recipe as the stop-context block, THEN explicitly re-test on
      Allsafe (Android) before calling it done -- same cross-platform
      due-diligence pattern that caught the as_ascii() NUL-byte bug last
-     time something looked iOS-clean (BACKLOG.md 2026-11-14).
+     time something looked iOS-clean (BACKLOG.md 2026-11-14). Not
+     followed in this order in practice -- see the DONE note above.
 
 - N4TIVE ch03 and RedRunner findings JSONs: BOTH deliberately deferred
   (2026-11-03), not scheduled. RedRunner's deferral is permanent by

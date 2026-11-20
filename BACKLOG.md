@@ -4478,3 +4478,173 @@ to cooperate. The eeacollatz Step 4 run (2026-11-06) remains the only
 clean, end-to-end, AI-orchestrated proof point, and still requires a
 fed findings.json to get there. This is a narrower claim than the one
 above, and -- per the review -- a more credible one.
+
+
+## N4TIVE ch01 "STRING MAZE" solved, and a new MACE/lldb packaging limitation discovered (2026-11-20)
+
+Real flag recovered live from the device via decrypt_flag()'s return
+value: `FLAG{\xe9l\xe1r\x8bv\x86\xb6\xb6\xe4az\xc1v\x8cA\x9d\xc3<\xe8Ra~
+\xe0\xd8\x9bm\x8e\xb9n\xe0\xf6%\x8cx\xd1\x970\x12R}` -- matched
+byte-for-byte against an independent offline Python re-implementation
+of the cipher (xor_rolling LCG seeded 0xDEAD1337, inverse_permute via
+the 40-byte perm_table, final XOR against five 8-byte rodata_frag_*
+fragments). Worth flagging on its own: the real flag contains
+non-printable bytes, so it's likely unsubmittable via the app's plain
+SUBMIT FLAG text field as-is.
+
+The real story is how long it took to get there. `image list
+nativectf` / `image lookup -n Java_com_ctf_nativectf_challenges_
+Ch01_solve` found nothing even after confirmed successful native
+execution, and `/proc/pid/maps` showed no stringmaze/ch01-named
+mapping at all. Root cause, after ruling out a manual-ELF-loading
+evasion hypothesis (mprotect breakpoint never fired; decompiled
+Ch01.java via jadx showed completely standard
+`System.loadLibrary("ch01_stringmaze")` JNI, no tricks): N4TIVE's APK
+is built with `extractNativeLibs="false"`. Modern Android can mmap a
+.so directly out of the (page-aligned, uncompressed) APK zip at
+install time and never extract it to a standalone file on disk --
+confirmed via `find /data/app -iname "*nativectf*" -o -iname
+"libch01*"` returning nothing. The library never appears under its
+own name in /proc/pid/maps (shows as another base.apk-backed mapping
+instead, distinguishable only by r-xp exec permission); lldb's image
+list/image lookup never tracks it as a named module; pending symbol
+breakpoints never resolve.
+
+Workaround, now a proven repeatable technique: grep /proc/pid/maps for
+base.apk entries with r-xp permission to find the loaded library's
+runtime mmap base; `unzip -o <apk> "lib/arm64-v8a/<name>.so"` to pull
+the actual file out locally (works because the zip entry is stored
+uncompressed, even though Android itself never extracts it); `nm`
+(plain, not `-D`, to also catch local static symbols like
+decrypt_flag) against the extracted file for exact symbol file
+offsets; runtime address = mmap base + file offset; `breakpoint set
+-a <addr>` to set a raw address breakpoint that bypasses lldb's broken
+module/symbol tracking entirely. ASLR means the mmap base changes per
+process launch, so it must be recomputed after every fresh app
+relaunch (not after a mere lldb reconnect to the same still-running
+process).
+
+A secondary mistimed-instrumentation lesson along the way, not a
+tooling bug: a pending symbol breakpoint on Ch01_solve never resolved
+because the library had already loaded via an earlier button tap in
+the same process's lifetime -- Android's static { System.loadLibrary
+(...) } class-init semantics mean that only fires once per process,
+the first time the class is touched. Caught by reading Ch01.java
+directly rather than continuing to assume a tooling problem.
+
+## Static-analysis JSON ingest for MACE -- design idea motivated directly by ch01 (2026-11-20)
+
+The unzip+nm offset-lookup workaround above is, in effect, a manual
+one-off version of a static-analysis pre-processing step. Proposed
+design: a separate pass (today's unzip+nm, or something richer via
+Ghidra/radare2/REA) emits a JSON per library mapping symbol name to
+file offset, which MACE ingests as a supplement to its live module
+tracking -- enabling symbolic breakpoints and correct disassembly/
+call-chain context even for libraries lldb's live tracking can't
+resolve, like APK-embedded .so files. This stays inside MACE's
+existing findings.json-as-the-interface scope boundary (BACKLOG.md
+2026-11-15 architectural reflection) -- it's a second, narrower JSON
+contract (symbol-offset map vs. finding/breakpoint annotations), not a
+reversal of "MACE doesn't do static analysis itself." Ties into the
+existing REA pipeline idea logged previously. CB's call: ch01 is "the
+strongest case" yet for building this. Not scheduled this session --
+parked here for scoping next time N4TIVE-style packaging comes up
+again.
+
+## N4TIVE ch02 "STACK SMASHER" solved via direct native-function-call injection (2026-11-20)
+
+`FLAG{b2d4e8f01a3c5967d82e4b0f7a19c3d568e2f4}` -- accepted by the app
+as a truncated prefix of the full logged secret
+(b2d4e8f01a3c5967d82e4b0f7a19c3d568e2f4a03b), not the whole string;
+worth remembering for future challenges in this series that log a
+secret longer than the actual expected flag.
+
+processInput()'s documented 64-byte stack-buffer overflow (hijacking
+a function pointer sitting immediately after the buffer) was never
+actually exploited. compute_secret(const char *data, size_t len)
+ignores both its arguments entirely ((void)data; (void)len;) and just
+builds its secret from a hardcoded magic[] array -- so the simpler,
+safer move was calling it directly by its known raw runtime address
+(mmap base + nm file offset, same technique as ch01) via lldb's
+`expr --`, same direct-native-function-call-injection technique
+already proven on ch03/ch04. `expr -- (int)((int (*)(const char*,
+unsigned long))0x6e760fae94)(0, 0)` returned 1 (the function's
+documented return value) and logged "SECRET UNLOCKED: %s" via
+__android_log_print, pulled afterward with `adb logcat -d | grep -i
+"SECRET UNLOCKED"`.
+
+This pivot was deliberate, not just convenience: it avoided building
+a crafted jbyteArray via raw JNIEnv vtable calls (NewByteArray/
+SetByteArrayRegion), which would have meant guessing at vtable slot
+indices without reliable reference, and it kept the live breakpoint
+stop as short as possible given the real ANR/SIGSEGV hazard this
+session actually hit once already (see Known-good debugger recipes in
+HANDOFF.md) -- holding a breakpoint open on a main/UI-thread JNI call
+for more than ~5s risks Android's ANR watchdog, and outlasting the
+dialog has SIGSEGV-killed the process before.
+
+## GEF-inspired pointer-dereference chain for address-shaped registers -- shipped and live-validated (2026-11-20)
+
+Implemented per the 2026-11-16 design (HANDOFF.md item 3): new
+`_read_bounded_cstring()` and `_follow_pointer_chain()` in
+lldb_session.py, two new commands (mace_ptr_depth, mace_ptr_chain_on/
+off) in stop_hook.py, and a one-line change to snapshot_from_frame()
+to route address-shaped register values through the new chain
+function instead of directly into _classify_memory_region(). No
+changes needed to context_snapshot.py or context_panel.py -- the
+feature slots into the existing region_labels[]/_format_register_line
+display path unchanged. Commit a9dd935.
+
+Live-validated with mace_on on two real N4TIVE targets on a Pixel
+10a, zero exceptions across 29 registers on both stops: ch01 (string
+detection, priority 1), ch02 (string detection on x11/x12 == "m";
+a genuine 3-hop chain on x13, correctly cut off at the default
+_PTR_CHAIN_DEPTH=2; single-hop chains ending in a raw-hex fallback
+when _classify_memory_region() couldn't label the final address;
+immediate fallback with no chain at all when the first dereference
+itself failed). This is real, direct evidence all four priority-order
+behaviors in the design work as specified.
+
+A cosmetic bug was found and fixed during implementation review, never
+actually triggered visibly in this session's tests (no chain happened
+to end on a resolved _classify_memory_region() label): the final-label
+branch originally wrapped an already-resolved label in its own
+brackets (`f"[{label}]"`), which combined with
+_format_register_line()'s own unconditional outer-bracket wrap would
+have double-bracketed a resolved label (e.g. `[... -> [heap]]`).
+Fixed to `label if label else f"0x{current:x}"` -- validated via
+git diff + py_compile before and after.
+
+Still open: Enigma (iOS) validation. Today's order was a deliberate,
+acknowledged deviation from the original cross-platform validation
+plan (Android-first rather than iOS-first), given the session was
+already deep in an Android N4TIVE flow -- not a sign the plan itself
+changed. Don't call this feature fully done until iOS gets its own
+pass, same due-diligence pattern that caught the as_ascii() NUL-byte
+bug previously (2026-11-14).
+
+## Known limitation: garbled/misattributed stop-frame info near addresses lldb doesn't track as a named module (2026-11-20)
+
+Observed twice during ch02 debugging, and the second occurrence is a
+clean, concrete reproduction worth logging precisely. With mace_on
+active and a raw address breakpoint hit (breakpoint 1.1, pc correctly
+shown as 0x6e760fb168 in the registers section of MACE's own panel),
+the same panel's call-chain/syscall/stop sections simultaneously
+showed a completely different, unrelated address
+(0x71438889e0, "__dl_syscall +0x20 [linker64]", "svc #0") -- all from
+the same snapshot_from_frame() call. This rules out the first
+occurrence's working theory (raw lldb's own native stop text being
+confused by SIGCHLD cross-thread interleaving) -- this time it's
+MACE's own code internally disagreeing with itself within one
+snapshot about which address it's reporting on.
+
+Working hypothesis, not yet confirmed: two threads stopped near-
+simultaneously (thread 2 on a benign SIGCHLD, thread 1 on our real
+breakpoint), and whatever populates the call-chain/syscall/stop
+fields resolves "the" frame via a selected-thread/selected-frame API
+call that drifted to thread 2, while the register values were read
+from the actual breakpoint-hit frame some other way. Not root-caused
+this session -- deprioritized given live ANR time pressure during the
+ch02 session; flagged here as a known limitation for a dedicated
+root-cause pass later, with this entry's exact transcript as
+reproducible evidence.

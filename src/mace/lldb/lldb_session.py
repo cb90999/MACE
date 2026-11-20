@@ -144,6 +144,101 @@ def _classify_memory_region(process: lldb.SBProcess, target: lldb.SBTarget, addr
         return None  # Annotation is best-effort, never crash MACE
 
 
+def _read_bounded_cstring(process: lldb.SBProcess, addr: int, max_bytes: int = 48) -> Optional[str]:
+    """
+    Read up to max_bytes at addr and return it as a printable string if
+    every byte is printable ASCII, stopping at the first NUL. Appends
+    "..." if no NUL was found within max_bytes (truncated, not the
+    whole string). Returns None if the memory isn't readable or
+    contains any non-printable byte. Distinct from
+    ContextSnapshot.as_ascii(), which decodes an already-in-hand 8-byte
+    register value -- this is a fresh variable-length remote memory
+    read at an address discovered while following a pointer chain.
+    """
+    try:
+        error = lldb.SBError()
+        raw = process.ReadMemory(addr, max_bytes, error)
+        if error.Fail() or not raw:
+            return None
+        terminator = raw.find(b'\x00')
+        truncated = terminator == -1
+        content = raw if truncated else raw[:terminator]
+        if not content or not all(32 <= b < 127 for b in content):
+            return None
+        return content.decode('ascii') + ("..." if truncated else "")
+    except Exception:
+        return None
+
+
+_PTR_CHAIN_ENABLED = True   # toggled via mace_ptr_chain_on/mace_ptr_chain_off
+_PTR_CHAIN_DEPTH = 2        # toggled via mace_ptr_depth <N>
+
+
+def _follow_pointer_chain(process: lldb.SBProcess, target: lldb.SBTarget,
+                          addr: int, max_depth: int = None) -> Optional[str]:
+    """
+    GEF-inspired dereference chain for an address-shaped register value.
+    See HANDOFF.md's 2026-11-16 design entry. Per hop, in priority
+    order: (1) printable C string at this address -- show it, stop;
+    (2) function/symbol at this address via the same
+    target.ResolveLoadAddress() pattern _classify_memory_region() uses
+    -- show "symbol+0xN [module]", stop; (3) otherwise read 8 bytes
+    here and, if address-shaped (_ADDR_THRESHOLD) and not already
+    visited this chain (cycle guard), follow it and repeat; (4)
+    otherwise stop and show _classify_memory_region()'s label for
+    wherever the chain ended.
+
+    Depth default 2 (_PTR_CHAIN_DEPTH, tunable via mace_ptr_depth) --
+    deliberately conservative: each hop is a real remote memory
+    read/symbol-resolve, more expensive per stop than swift_data()
+    given ~10-15 address-shaped registers typical per stop (see
+    BACKLOG.md 2026-11-15 friend-review UPDATE on that overhead).
+    """
+    if max_depth is None:
+        max_depth = _PTR_CHAIN_DEPTH
+    visited = set()
+    current = addr
+    path = []
+    try:
+        for hop in range(max_depth + 1):
+            if current in visited:
+                path.append("(cycle)")
+                break
+            visited.add(current)
+
+            text = _read_bounded_cstring(process, current)
+            if text is not None:
+                path.append(f'"{text}"')
+                break
+
+            sb_addr = target.ResolveLoadAddress(current)
+            symbol = sb_addr.GetSymbol()
+            if symbol.IsValid():
+                start = symbol.GetStartAddress().GetLoadAddress(target)
+                offset = current - start if start != lldb.LLDB_INVALID_ADDRESS else 0
+                module = sb_addr.GetModule()
+                mod_name = module.GetFileSpec().GetBasename() if module.IsValid() else "?"
+                suffix = f"+0x{offset:x}" if offset else ""
+                path.append(f"{symbol.GetName()}{suffix} [{mod_name}]")
+                break
+
+            if hop < max_depth:
+                error = lldb.SBError()
+                next_val = process.ReadPointerFromMemory(current, error)
+                if not error.Fail() and next_val >= _ADDR_THRESHOLD:
+                    path.append(f"0x{current:x}")
+                    current = next_val
+                    continue
+
+            label = _classify_memory_region(process, target, current)
+            path.append(label if label else f"0x{current:x}")
+            break
+    except Exception:
+        return None
+
+    return " -> ".join(path) if path else None
+
+
 def snapshot_from_frame(frame: lldb.SBFrame,
                         stop_reason: str = "",
                         iteration: int = None) -> ContextSnapshot:
@@ -181,7 +276,10 @@ def snapshot_from_frame(frame: lldb.SBFrame,
     process = frame.GetThread().GetProcess()
     for i in range(29):
         if snap.x[i] >= _ADDR_THRESHOLD:
-            snap.region_labels[i] = _classify_memory_region(process, target, snap.x[i])
+            if _PTR_CHAIN_ENABLED:
+                snap.region_labels[i] = _follow_pointer_chain(process, target, snap.x[i])
+            else:
+                snap.region_labels[i] = _classify_memory_region(process, target, snap.x[i])
 
     # --- Passive objc_msgSend annotation ---
     _annotate_objc_call(snap, frame, target)

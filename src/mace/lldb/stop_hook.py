@@ -13,6 +13,7 @@ import subprocess
 import threading
 
 from mace.lldb.lldb_session import snapshot_from_frame, _get_breakpoint_id
+from mace.lldb import lldb_session
 from mace.display.context_panel import render_panel, Color
 from mace.core import findings
 from mace.core import patch_history
@@ -157,6 +158,37 @@ def mace_mcp_off(debugger, command, result, internal_dict):
     print("[MACE] MCP channel stopped.")
 
 
+def mace_ptr_depth(debugger, command, result, internal_dict):
+    """Set the max hop depth for the GEF-style pointer-dereference
+    chain shown for address-shaped registers (default 2). Usage:
+    mace_ptr_depth <N>"""
+    args = command.strip()
+    if not args:
+        print(f"[MACE] Pointer-chain depth: {lldb_session._PTR_CHAIN_DEPTH}")
+        return
+    try:
+        depth = int(args)
+    except ValueError:
+        print(f"[MACE] Usage: mace_ptr_depth <N> (got {args!r})")
+        return
+    lldb_session._PTR_CHAIN_DEPTH = depth
+    print(f"[MACE] Pointer-chain depth set to {depth}")
+
+
+def mace_ptr_chain_on(debugger, command, result, internal_dict):
+    """Enable the GEF-style pointer-dereference chain for
+    address-shaped registers (on by default)."""
+    lldb_session._PTR_CHAIN_ENABLED = True
+    print("[MACE] Pointer-dereference chain enabled.")
+
+
+def mace_ptr_chain_off(debugger, command, result, internal_dict):
+    """Disable the GEF-style pointer-dereference chain, reverting
+    address-shaped registers to the flat region-label annotation."""
+    lldb_session._PTR_CHAIN_ENABLED = False
+    print("[MACE] Pointer-dereference chain disabled.")
+
+
 def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand("command script add -f stop_hook.mace_on mace_on")
     debugger.HandleCommand("command script add -f stop_hook.mace_off mace_off")
@@ -178,6 +210,9 @@ def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand("command script add -c stop_hook.MACEConnectIos mace_connect_ios")
     debugger.HandleCommand("command script add -c stop_hook.MACEOptions mace_options")
     debugger.HandleCommand("command script add -c stop_hook.MACEOptions mace_help")
+    debugger.HandleCommand("command script add -f stop_hook.mace_ptr_depth mace_ptr_depth")
+    debugger.HandleCommand("command script add -f stop_hook.mace_ptr_chain_on mace_ptr_chain_on")
+    debugger.HandleCommand("command script add -f stop_hook.mace_ptr_chain_off mace_ptr_chain_off")
     print("[MACE] Loaded. Use 'mace_on' after setting breakpoints to enable.")
     print("[MACE] Run 'mace_options' (or 'mace_help') to see every available command.")
 
